@@ -1,0 +1,1 @@
+CREATE TABLE myName (varChars UUID [] NOT NULL);

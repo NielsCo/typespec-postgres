@@ -1,0 +1,1 @@
+CREATE TABLE myName (stringName TEXT);

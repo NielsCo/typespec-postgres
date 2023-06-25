@@ -1,0 +1,4 @@
+CREATE TABLE AnotherTest (
+    test_id NUMERIC NOT NULL REFERENCES AnotherTest,
+    myId NUMERIC PRIMARY KEY
+);

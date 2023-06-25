@@ -1,0 +1,1 @@
+CREATE TABLE ByteBool (byte BYTEA, bool BOOLEAN);

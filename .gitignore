@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.vscode/
+temp/
+test/private.test.ts
+coverage/tmp/*
+test-results.xml
+.idea/modules.xml
+.idea/typespec-sql-library.iml
+.idea/vcs.xml
+.idea/inspectionProfiles/Project_Default.xml
+.idea/scopes/test_and_src.xml

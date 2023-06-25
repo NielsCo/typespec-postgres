@@ -1,0 +1,6 @@
+CREATE TYPE MyEnum AS ENUM ('test', 'test2', 'test3');
+
+CREATE TABLE IF NOT EXISTS myName();
+
+ALTER TABLE IF EXISTS myName
+    ADD COLUMN IF NOT EXISTS myEnumValue MyEnum NOT NULL;

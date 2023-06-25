@@ -1,0 +1,7 @@
+CREATE TABLE Test (id UUID PRIMARY KEY);
+
+CREATE TABLE AutomaticTest (
+    testReference UUID NOT NULL REFERENCES Test
+);
+
+CREATE TABLE ManualTest (reference UUID NOT NULL REFERENCES Test);

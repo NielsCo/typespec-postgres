@@ -1,0 +1,1 @@
+CREATE TABLE RecordHolder (obj JSONB NOT NULL);

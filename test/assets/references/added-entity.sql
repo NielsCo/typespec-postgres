@@ -1,0 +1,5 @@
+CREATE TABLE MyTest (id TEXT PRIMARY KEY);
+
+CREATE TABLE AutomaticTest (
+    reference TEXT NOT NULL REFERENCES MyTest
+);

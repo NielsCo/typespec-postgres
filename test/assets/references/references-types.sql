@@ -1,0 +1,12 @@
+CREATE TABLE Number (id NUMERIC PRIMARY KEY);
+
+CREATE TABLE Boo (id BOOLEAN PRIMARY KEY);
+
+CREATE TABLE ScalarId (/* hello */ id TEXT PRIMARY KEY);
+
+CREATE TABLE MyTest (
+    number NUMERIC NOT NULL REFERENCES Number,
+    boo BOOLEAN NOT NULL REFERENCES Boo,
+    /* hello */
+    scalarId TEXT NOT NULL REFERENCES ScalarId
+);

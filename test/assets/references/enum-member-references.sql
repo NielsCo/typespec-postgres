@@ -1,0 +1,10 @@
+CREATE TYPE Test AS ENUM ('10', '100');
+
+CREATE TABLE Ten (id Test PRIMARY KEY DEFAULT '10');
+
+CREATE TABLE Hundred (id Test PRIMARY KEY DEFAULT '100');
+
+CREATE TABLE ReferencesThem (
+    ten Test NOT NULL REFERENCES Ten,
+    hundred Test NOT NULL DEFAULT '100' REFERENCES Hundred
+);
