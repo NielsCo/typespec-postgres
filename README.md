@@ -312,3 +312,9 @@ This project is part of my bachelor thesis project and I'd like to thank [Objekt
 
 # License 
 For the license see [LICENSE](LICENSE)
+
+## Package
+
+| Name             | Latest |
+| ---------------- | ------ |
+| typespec-postgres  | [![](https://img.shields.io/npm/v/typespec-postgres)](https://www.npmjs.com/package/typespec-postgres) |
