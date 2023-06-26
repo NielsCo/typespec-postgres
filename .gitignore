@@ -10,3 +10,4 @@ test-results.xml
 .idea/vcs.xml
 .idea/inspectionProfiles/Project_Default.xml
 .idea/scopes/test_and_src.xml
+*.tgz

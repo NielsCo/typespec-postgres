@@ -2,9 +2,15 @@
   "name": "typespec-postgres",
   "type": "module",
   "version": "0.1.0",
-  "description": "TypeSpec Library to be able to emit Postgres Schema",
+  "description": "Unofficial TypeSpec Library to be able to emit Postgres Schema of models",
   "main": "dist/src/index.js",
+  "homepage": "https://github.com/NielsCo/typespec-postgres",
   "tspMain": "lib/postgres.tsp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NielsCo/typespec-postgres.git"
+  },
+  "private": false,
   "scripts": {
     "clean": "rimraf ./dist ./temp",
     "build": "tsc -p . && npm run lint-typespec-library",
@@ -15,12 +21,20 @@
     "lint": "eslint . --ext .ts --max-warnings=0",
     "lint:fix": "eslint . --fix --ext .ts"
   },
-  "author": "",
+  "author": "Niels Hanselmann",
   "license": "MIT",
   "exports": {
     ".": "./dist/src/index.js",
     "./testing": "./dist/src/testing/index.js"
   },
+  "files": [
+    "lib/*.tsp",
+    "dist/**",
+    "!dist/test/**",
+    "LICENSE",
+    "README.md",
+    "package.json"
+  ],
   "typesVersions": {
     "*": {
       "*": [
@@ -35,7 +49,6 @@
     "node": ">=16.0.0"
   },
   "dependencies": {
-    "js-yaml": "~4.1.0"
   },
   "peerDependencies": {
     "@typespec/compiler": "^0.45.2",
