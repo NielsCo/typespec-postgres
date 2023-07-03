@@ -144,6 +144,27 @@ describe("Model Referencing", () => {
         ]);
     });
 
+    it("Should not allow an empty references decorator", async () => {
+        const diagnostics = await diagnoseSQLFor(`
+            @entity()
+            model Test {
+                @references()
+                anotherTest: numeric,
+            }
+
+            @entity()
+            model AnotherTest {
+                notAnId: numeric
+            }
+        `);
+        expectDiagnostics(diagnostics, [
+            {
+                code: "typespec-postgres/references-without-target",
+                message: "The @references decorator must point to a model but it points to nothing",
+            }
+        ]);
+    });
+
     it("Should parse cyclic referencing models and reference them too", async () => {
         const res = await sqlFor(`
             @entity()

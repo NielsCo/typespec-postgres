@@ -12,15 +12,22 @@ export function $entity(context: DecoratorContext, target: (Model | Enum), name?
   }
 }
 
-export function $references(context: DecoratorContext, target: ModelProperty, element?: Model) {
-  if (!canTypeBeReference(target.type)) {
+export function $references(context: DecoratorContext, target: ModelProperty, element: Model) {
+  if (!element) {
+    reportDiagnostic(context.program, {
+      code: "references-without-target",
+      format: { type: target.type.kind },
+      target: target,
+    });
+  }
+  else if (!canTypeBeReference(target.type)) {
     reportDiagnostic(context.program, {
       code: "reference-not-allowed",
       format: { type: target.type.kind },
       target: target,
     });
   }
-  if (target.type.kind === "Model" && element) {
+  else if (target.type.kind === "Model" && element) {
     if (target.type === element) {
       // if there is a references decorator on a modelProperty that automatically references the same decorator we delete the decorator
       if (target.decorators.filter(decorator => decorator.decorator.name === referencesDecoratorString).length === 1) {

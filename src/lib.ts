@@ -59,6 +59,12 @@ const EmitterOptionsSchema: JSONSchemaType<SQLEmitterOptions> = {
 const libDefinition = {
   name: "typespec-postgres",
   diagnostics: {
+    "references-without-target": {
+      severity: "error",
+      messages: {
+        default: paramMessage`The @references decorator must point to a model but it points to nothing`,
+      },
+    },
     "reserved-column-name": {
       severity: "error",
       messages: {
