@@ -223,21 +223,16 @@ export class DefaultConstraint extends ToString {
   }
 }
 
-export class CheckConstraint extends NamedConstraint {
-
+export class CheckConstraint extends SimpleConstraint {
   constraintString = "CHECK";
-  constructor(public constraintParam: string, name?: string) {
+  constructor(public constraintParam: string) {
     if (!constraintParam) {
       throw Error("Check Constraint must have constraintParam");
     }
-    super(name);
+    super();
   }
   toString(_lineType: NewLineType, _saveMode: boolean): string {
-    if (this.name) {
-      return `CONSTRAINT ${this.name} ${this.constraintString} (${this.constraintParam})`;
-    } else {
-      return `${this.constraintString} (${this.constraintParam})`;
-    }
+    return `${this.constraintString} (${this.constraintParam})`;
   }
 }
 
