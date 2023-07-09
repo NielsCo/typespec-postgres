@@ -4,6 +4,8 @@ import { DirectedGraph } from "./graph.js";
 import { NewLineType } from "./lib.js";
 import { IoCContainer, wrapIdentifierType } from "./naming-resolver.js";
 
+export type ConstraintType = 'PRIMARY KEY' | 'UNIQUE' | 'CHECK' | 'INLINED FOREIGN KEY' | "DEFAULT" | "NOT NULL";
+
 abstract class ToString {
   protected namingConflictResolver;
   constructor() {
@@ -149,8 +151,8 @@ export class SQLTableColumn extends Documented {
     const docs = this.getDocs(lineType);
 
     this.columnConstraints.sort((a, b) => {
-      const aIsInlinedForeignKey = a instanceof InlinedForeignKeyConstraint;
-      const bIsInlinedForeignKey = b instanceof InlinedForeignKeyConstraint;
+      const aIsInlinedForeignKey = a.constraintType === "INLINED FOREIGN KEY";
+      const bIsInlinedForeignKey = b.constraintType === "INLINED FOREIGN KEY";
 
       if (aIsInlinedForeignKey && !bIsInlinedForeignKey) {
         return 1;
@@ -169,15 +171,15 @@ export class SQLTableColumn extends Documented {
   }
 
   hasForeignKeyConstraint(): boolean {
-    return this.columnConstraints.some(constraint => constraint instanceof InlinedForeignKeyConstraint);
+    return this.columnConstraints.some(constraint => constraint.constraintType === "INLINED FOREIGN KEY");
   }
 
   getForeignKeyConstraint(): InlinedForeignKeyConstraint | undefined {
-    return this.columnConstraints.find(constraint => constraint instanceof InlinedForeignKeyConstraint) as InlinedForeignKeyConstraint;
+    return this.columnConstraints.find(constraint => constraint.constraintType === "INLINED FOREIGN KEY") as InlinedForeignKeyConstraint;
   }
 
   removeForeignKeyConstraints(): void {
-    this.columnConstraints = this.columnConstraints.filter(constraint => !(constraint instanceof InlinedForeignKeyConstraint));
+    this.columnConstraints = this.columnConstraints.filter(constraint => constraint.constraintType !== "INLINED FOREIGN KEY");
   }
 }
 
@@ -188,6 +190,7 @@ export interface AddEntityReturn {
 }
 
 export abstract class SimpleConstraint extends ToString {
+  abstract constraintType: ConstraintType;
   abstract constraintString: string;
   toString(_lineType: NewLineType, _saveMode: boolean) {
     return this.constraintString;
@@ -210,7 +213,8 @@ export abstract class NamedConstraint extends SimpleConstraint {
   }
 }
 
-export class DefaultConstraint extends ToString {
+export class DefaultConstraint extends SimpleConstraint {
+  constraintType: "DEFAULT" = "DEFAULT" as const;
   constraintString = "DEFAULT";
   constructor(public constraintParam: string) {
     super();
@@ -224,6 +228,7 @@ export class DefaultConstraint extends ToString {
 }
 
 export class CheckConstraint extends SimpleConstraint {
+  constraintType: "CHECK" = "CHECK" as const;
   constraintString = "CHECK";
   constructor(public constraintParam: string) {
     if (!constraintParam) {
@@ -236,24 +241,30 @@ export class CheckConstraint extends SimpleConstraint {
   }
 }
 
+
 export class NotNullConstraint extends SimpleConstraint {
+  constraintType: "NOT NULL" = "NOT NULL" as const;
   constraintString: string = "NOT NULL";
 }
 
 export class UniqueConstraint extends NamedConstraint {
+  constraintType: "UNIQUE" = "UNIQUE" as const;
   constraintString: string = "UNIQUE";
 }
 
 export class PrimaryKeyConstraint extends SimpleConstraint {
+  constraintType: "PRIMARY KEY" = "PRIMARY KEY" as const;
   constraintString: string = "PRIMARY KEY";
 }
 
-export type ColumnConstraint = InlinedForeignKeyConstraint | PrimaryKeyConstraint | UniqueConstraint | NotNullConstraint | CheckConstraint;
+export type ColumnConstraint = InlinedForeignKeyConstraint | PrimaryKeyConstraint | UniqueConstraint |
+  NotNullConstraint | CheckConstraint | DefaultConstraint;
 
 /**
  * always used the public key if no Property is specified
  */
 export class InlinedForeignKeyConstraint extends SimpleConstraint {
+  constraintType: "INLINED FOREIGN KEY" = "INLINED FOREIGN KEY" as const;
   constraintString = "REFERENCES";
   constructor(public referencedModel: Model) {
     if (!referencedModel) {
@@ -297,18 +308,22 @@ export class SQLRoot extends ToString {
     }
 
     for (const table of tables) {
-      const references = table.getForeignKeyReferences();
-      for (const reference of references) {
-        const constraint: InlinedForeignKeyConstraint
-          = reference.columnConstraints.find(constraint => constraint instanceof InlinedForeignKeyConstraint) as InlinedForeignKeyConstraint;
-        if (constraint) {
-          const referencedModel = constraint.getReferencedModel();
-          const referencedElement = this.getRootLevelElementForType(referencedModel);
-          if (!(referencedElement && referencedElement instanceof SQLTable)) {
-            throw Error("Did not find the referenced SQLTable to a reference! " + (referencedModel.name ?? ''));
-          } else {
-            graph.addEdge(table, referencedElement);
-          }
+      this.addReferencesToGraph(table, graph);
+    }
+  }
+
+  private addReferencesToGraph(table: SQLTable, graph: DirectedGraph<SQLTable>) {
+    const references = table.getForeignKeyReferences();
+    for (const reference of references) {
+      const constraint: InlinedForeignKeyConstraint
+        = reference.columnConstraints.find(constraint => constraint.constraintType === "INLINED FOREIGN KEY") as InlinedForeignKeyConstraint;
+      if (constraint) {
+        const referencedModel = constraint.getReferencedModel();
+        const referencedElement = this.getRootLevelElementForType(referencedModel);
+        if (!(referencedElement && referencedElement instanceof SQLTable)) {
+          throw Error("Did not find the referenced SQLTable to a reference! " + (referencedModel.name ?? ''));
+        } else {
+          graph.addEdge(table, referencedElement);
         }
       }
     }
