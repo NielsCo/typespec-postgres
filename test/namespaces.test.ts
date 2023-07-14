@@ -50,7 +50,7 @@ describe("Namespaces", () => {
         const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
 
         strictEqual(res, expectedSQL);
-    })
+    });
 
     it("Should handle nested namespaces without @entity decorators if options to emit are set", async () => {
         const res = await sqlFor(
