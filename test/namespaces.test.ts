@@ -32,6 +32,26 @@ describe("Namespaces", () => {
         strictEqual(res, expectedSQL);
     });
 
+    it("Should emit a union type even if it is nested in a namespace which isn't the global namespace", async () => {
+        const res = await sqlFor(
+            `
+        namespace Test {
+            @entity
+            union Breed {
+                beagle: "Beagle",
+                shepherd: "GermanShepherd",
+                retriever: "GoldenRetriever",
+            }
+        }
+        `
+        );
+
+        const filePath = pathPrefix + "union-type-emit.sql";
+        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+
+        strictEqual(res, expectedSQL);
+    })
+
     it("Should handle nested namespaces without @entity decorators if options to emit are set", async () => {
         const res = await sqlFor(
             `

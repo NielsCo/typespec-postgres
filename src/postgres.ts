@@ -606,13 +606,13 @@ class SQLEmitter {
   //     }
 
   namespaceHasEntities(namespace: Namespace): boolean {
-    for (const [, e] of namespace.enums.entries()) {
-      if (this.hasEntityDecorator(e)) {
-        return true;
-      }
-    }
-    for (const [, model] of namespace.models.entries()) {
-      if (this.hasEntityDecorator(model)) {
+    const possibleEntities = [
+      ...namespace.enums.entries(),
+      ...namespace.models.entries(),
+      ...namespace.unions.entries(),
+    ];
+    for (const [, possibleEntity] of possibleEntities) {
+      if (this.hasEntityDecorator(possibleEntity)) {
         return true;
       }
     }
@@ -624,8 +624,7 @@ class SQLEmitter {
     return false;
   }
 
-
-  emitSchemas(serviceNamespace: Namespace) {
+  emitSchemas(namespace: Namespace) {
     const propagateModelCheck = (model: Model) => {
       if (this.options.emitNonEntityTypes || this.hasEntityDecorator(model)) {
         this.propagateModel(model);
@@ -642,7 +641,7 @@ class SQLEmitter {
         this.registerUnion(union);
       }
     };
-    const skipSubNamespaces = isGlobalNamespace(this.program, serviceNamespace) && !this.namespaceHasEntities(serviceNamespace);
+    const skipSubNamespaces = isGlobalNamespace(this.program, namespace) && !this.namespaceHasEntities(namespace);
 
     const navigationFunctionWrapper = {
       model: propagateModelCheck,
@@ -651,20 +650,28 @@ class SQLEmitter {
     };
 
     navigateTypesInNamespace(
-      serviceNamespace,
+      namespace,
       navigationFunctionWrapper,
       { skipSubNamespaces }
     );
 
     if (this.options.emitNonEntityTypes) {
-      for (const [, value] of serviceNamespace.namespaces) {
-        if (skippedNamespaces.every(name => name !== value.name)) {
-          navigateTypesInNamespace(
-            value,
-            navigationFunctionWrapper,
-            { skipSubNamespaces: false }
-          );
-        }
+      this.navigateSubNamespaces(namespace, navigationFunctionWrapper);
+    }
+  }
+
+  private navigateSubNamespaces(namespace: Namespace, navigationFunctionWrapper: {
+    model: (model: Model) => void;
+    enum: (e: Enum) => void;
+    union: (union: Union) => void;
+  }) {
+    for (const [, value] of namespace.namespaces) {
+      if (skippedNamespaces.every(name => name !== value.name)) {
+        navigateTypesInNamespace(
+          value,
+          navigationFunctionWrapper,
+          { skipSubNamespaces: false }
+        );
       }
     }
   }
