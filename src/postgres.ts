@@ -116,16 +116,14 @@ export interface ResolvedSQLEmitterOptions {
 
 class SQLEmitter {
   private root: SQLRoot;
-  private serviceNamespace: string | undefined;
   metadataInfo: MetadataInfo | undefined;
 
   constructor(private program: Program, private options: ResolvedSQLEmitterOptions) {
     this.root = new SQLRoot();
   }
 
-  initializeEmitter(service: Service, _version?: string) {
+  initializeEmitter(_version?: string) {
     this.root = new SQLRoot();
-    this.serviceNamespace = getNamespaceFullName(service.type);
     this.metadataInfo = createMetadataInfo(this.program, {
       canonicalVisibility: Visibility.Read,
       canShareProperty: (p) => isReadonlyProperty(this.program, p),
@@ -179,7 +177,7 @@ class SQLEmitter {
     multipleService: boolean,
     version?: string
   ) {
-    this.initializeEmitter(service, version);
+    this.initializeEmitter(version);
     try {
       this.emitSchemas(service.type);
 

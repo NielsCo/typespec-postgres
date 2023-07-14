@@ -159,6 +159,10 @@ describe("Model Referencing", () => {
         `);
         expectDiagnostics(diagnostics, [
             {
+                code: "invalid-argument-count",
+                message: "Expected 1 arguments, but got 0.",
+            },
+            {
                 code: "typespec-postgres/references-without-target",
                 message: "The @references decorator must point to a model but it points to nothing",
             }
