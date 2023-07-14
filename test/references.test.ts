@@ -144,7 +144,7 @@ describe("Model Referencing", () => {
         ]);
     });
 
-    it.only("Should not allow an empty references decorator", async () => {
+    it("Should not allow an empty references decorator", async () => {
         const diagnostics = await diagnoseSQLFor(`
             @entity()
             model Test {
