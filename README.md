@@ -5,7 +5,7 @@ In order to define actual schema there had to be ***limitations*** *set to the m
 The limitations are set by the decorators and are described in the section [references](#references). <br>
 The library is designed to aid in the initial creation of tables and enums, but the finer points of database design and administration will still require manual intervention.<br>
 While the library is only a proof of concept that was developed as part of a thesis project, it produces valid schema and has a lot of tests to ensure that it does so.<br><br>
-As TypeSpec itself is early in its development it regularly does have breaking changes between versions. This library currently supports the **TypeSpec Version 0.45.2**.
+As TypeSpec itself is early in its development it regularly does have breaking changes between versions. This library currently supports the **TypeSpec Version 0.46.0**.
 
 # Getting Started
 You can skip the first 4 steps if you already have a TypeSpec-Project up and running
@@ -135,7 +135,7 @@ Currently only singular primary keys are supported. <br> That means that a model
 This decorator is set to manually set the reference to another entity. This adds a foreign key constraint to the column.
 The decorator always uses the primary key of the referenced entity and does currently not allow to set a different column.
 
-###Example:
+### Example:
 ```typespec
 # imports and using statements
 
