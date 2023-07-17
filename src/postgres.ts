@@ -60,7 +60,7 @@ import {
   SQLRoot,
   SQLTable,
   SQLTableColumn,
-  SQLStandardColumnType
+  SQLPrimitiveColumnType
 } from "./types.js";
 import {
   DuplicateEntityCollisionError,
@@ -179,12 +179,12 @@ class SQLEmitter {
   ) {
     this.initializeEmitter(version);
     try {
-      this.emitSchemas(service.type);
+      this.buildSchemaAST(service.type);
 
       if (!this.program.compilerOptions.noEmit && !this.program.hasError()) {
         await emitFile(this.program, {
           path: this.resolveOutputFile(service, multipleService, version),
-          content: serializeDocument(this.root, this.options.fileType, this.options.newLine, this.options.saveMode),
+          content: serializeAST(this.root, this.options.fileType, this.options.newLine, this.options.saveMode),
           newLine: this.options.newLine,
         });
       }
@@ -258,7 +258,10 @@ class SQLEmitter {
     return undefined;
   }
 
-  dataTypeOfReferenceToModel(model: Model): SQLColumnType | undefined {
+  /**
+   * Returns the data type of the primary key of the model or undefined
+   */
+  dataTypeOfPrimaryKey(model: Model): SQLColumnType | undefined {
     const table = this.root.getRootLevelElementForType(model);
     if (table && table instanceof SQLTable) {
       const primaryKey = this.getPrimaryKeyPropOfModel(model);
@@ -273,39 +276,40 @@ class SQLEmitter {
     }
   }
 
-  handleDataTypeOfModel(type: Model, modelProperty: ModelProperty): SQLColumnType | undefined {
+  handleDataTypeOfModel(model: Model, modelProperty: ModelProperty): SQLColumnType | undefined {
     let dataType: SQLColumnType | undefined;
-    if (type.name === recordName) { // this means we actually have an object here (not anything else)
+    if (model.name === recordName) { // this means we actually have an object here (not anything else)
       dataType = this.getInnerDataTypeOfRecord();
     }
-    else if (isModelArray(type)) { // model is an array and not a simple model
-      dataType = this.getInnerDataTypeOfArray(type, modelProperty);
+    else if (isModelArray(model)) { // model is an array and not a simple model
+      dataType = this.getInnerDataTypeOfArray(model, modelProperty);
     } else {
-      this.propagateModel(type);
-      const referenceDataType = this.dataTypeOfReferenceToModel(type);
+      this.addModel(model);
+      const referenceDataType = this.dataTypeOfPrimaryKey(model);
       if (!referenceDataType) {
         reportDiagnostic(this.program, {
           code: "reference-without-key",
-          format: { type: type.name },
-          target: type,
+          format: { type: model.name },
+          target: model,
         });
         return undefined;
       } else {
-        if (referenceDataType.isReference) {
+        if (!referenceDataType.isPrimitive) {
           dataType = {
-            referencedEntity: referenceDataType.referencedEntity,
+            typeOriginEntity: referenceDataType.typeOriginEntity,
             isArray: referenceDataType.isArray,
-            isReference: true,
+            isPrimitive: false,
             constraints: [],
-            dataType: "ModelReference"
+            dataType: "Enum",
+            isForeignKey: true
           };
         } else {
           dataType = {
             dataType: referenceDataType.dataType,
             dataTypeString: referenceDataType?.dataTypeString,
             isArray: referenceDataType?.isArray,
-            isReference: false,
-            constraints: [new InlinedForeignKeyConstraint(type)]
+            isPrimitive: true,
+            constraints: [new InlinedForeignKeyConstraint(model)]
           };
         }
       }
@@ -325,8 +329,8 @@ class SQLEmitter {
     }
 
     else if (type.kind === "Enum") {
-      this.propagateEnum(type);
-      dataType = { dataType: "Enum", referencedEntity: type, isArray: false, isReference: true, constraints: [] };
+      this.addEnum(type);
+      dataType = { isForeignKey: false, typeOriginEntity: type, isArray: false, isPrimitive: false, constraints: [], dataType: "Enum" };
     }
 
     else if (type.kind === "Model") {
@@ -342,8 +346,8 @@ class SQLEmitter {
     }
 
     else if (type.kind === "EnumMember") {
-      this.propagateEnum(type.enum);
-      dataType = { dataType: "Enum", referencedEntity: type.enum, isArray: false, isReference: true, constraints: [] };
+      this.addEnum(type.enum);
+      dataType = { isForeignKey: false, typeOriginEntity: type.enum, isArray: false, isPrimitive: false, constraints: [], dataType: "Enum" };
     }
 
     if (modelProperty && dataType) {
@@ -358,7 +362,7 @@ class SQLEmitter {
     const innerType = getInnerTypeOfArray(model);
     if (innerType.kind === "Scalar") {
       const innerReturn = this.applyIntrinsicDecorators(innerType, dataType, false, columnName ?? modelProperty.name);
-      if (!innerReturn.isReference && !dataType.isReference) {
+      if (innerReturn.isPrimitive && dataType.isPrimitive) {
         if (!dataTypeThroughParentDecoratorsOverwritten) {
           dataType.dataTypeString = innerReturn.dataTypeString;
           dataTypeThroughParentDecoratorsOverwritten = dataType.dataTypeString !== innerReturn.dataType;
@@ -385,7 +389,7 @@ class SQLEmitter {
     let dataTypeThroughParentDecoratorsOverwritten = false;
     const innerReturn = this.applyIntrinsicDecorators(scalar, dataType, false, columnName ?? modelProperty.name);
     // there are things here that work through object-references being overwritten (so for example the constraints get pushed to the dataType-object)
-    if (!innerReturn.isReference && !dataType.isReference) {
+    if (innerReturn.isPrimitive && dataType.isPrimitive) {
       if (!dataTypeThroughParentDecoratorsOverwritten) {
         dataType.dataTypeString = innerReturn.dataTypeString;
         dataTypeThroughParentDecoratorsOverwritten = dataType.dataTypeString !== innerReturn.dataType;
@@ -415,7 +419,7 @@ class SQLEmitter {
     columnName?: string): SQLColumnType {
 
     const isString = isStringType(this.program, getPropertyType(modelProperty));
-    if (isString && !dataType.isReference) {
+    if (isString && dataType.isPrimitive) {
       dataType = this.applyStringDecorators(modelProperty, dataType, dataTypeThroughParentDecoratorsOverwritten, columnName);
     }
 
@@ -484,7 +488,7 @@ class SQLEmitter {
   }
 
   applyStringDecorators(modelProperty: Scalar | ModelProperty,
-    dataType: SQLStandardColumnType,
+    dataType: SQLPrimitiveColumnType,
     dataTypeThroughParentDecoratorsOverwritten: boolean,
     columnName?: string): SQLColumnType {
 
@@ -503,7 +507,7 @@ class SQLEmitter {
     return dataType;
   }
 
-  applyMinLength(modelProperty: ModelProperty | Scalar, dataType: SQLStandardColumnType, columnName?: string) {
+  applyMinLength(modelProperty: ModelProperty | Scalar, dataType: SQLPrimitiveColumnType, columnName?: string) {
     const minLength = getMinLength(this.program, modelProperty);
     if (minLength) {
       const minLengthConstraint = new CheckConstraint(`LENGTH(${columnName ?? modelProperty.name}) > ${minLength}`);
@@ -511,7 +515,7 @@ class SQLEmitter {
     }
   }
 
-  applyMaxLength(modelProperty: ModelProperty | Scalar, dataType: SQLStandardColumnType, dataTypeThroughParentDecoratorsOverwritten: boolean, columnName?: string) {
+  applyMaxLength(modelProperty: ModelProperty | Scalar, dataType: SQLPrimitiveColumnType, dataTypeThroughParentDecoratorsOverwritten: boolean, columnName?: string) {
     const maxLength = getMaxLength(this.program, modelProperty);
     if (maxLength) {
       if (dataType.dataTypeString === "TEXT" && maxLength < 10485760) {
@@ -524,7 +528,7 @@ class SQLEmitter {
     }
   }
 
-  applyEncode(modelProperty: ModelProperty | Scalar, dataType: SQLStandardColumnType, dataTypeThroughParentDecoratorsOverwritten: boolean) {
+  applyEncode(modelProperty: ModelProperty | Scalar, dataType: SQLPrimitiveColumnType, dataTypeThroughParentDecoratorsOverwritten: boolean) {
     const encoding = getEncode(this.program, modelProperty);
     if (encoding?.encoding) {
       if (encoding.encoding.toUpperCase() === "UUID") {
@@ -546,7 +550,7 @@ class SQLEmitter {
   /**
    * This method should be deprecated and removed someday as format is replaced by encode!
    */
-  applyFormat(modelProperty: ModelProperty | Scalar, dataType: SQLStandardColumnType, dataTypeThroughParentDecoratorsOverwritten: boolean) {
+  applyFormat(modelProperty: ModelProperty | Scalar, dataType: SQLPrimitiveColumnType, dataTypeThroughParentDecoratorsOverwritten: boolean) {
     const formatStr = getFormat(this.program, modelProperty);
     if (formatStr) {
       if (formatStr.toUpperCase() === "UUID") {
@@ -564,7 +568,7 @@ class SQLEmitter {
   }
 
   getInnerDataTypeOfRecord(): SQLColumnType {
-    return { constraints: [], dataType: "JSONB", dataTypeString: "JSONB", isArray: false, isReference: false };
+    return { constraints: [], dataType: "JSONB", dataTypeString: "JSONB", isArray: false, isPrimitive: true };
   }
 
   /**
@@ -578,7 +582,7 @@ class SQLEmitter {
       const innerType = this.getDataTypeOfModelProperty(indexer.value as unknown as Type, modelProperty);
       if (innerType) {
         innerType.isArray = true;
-        if (innerType.isReference || innerType.constraints.some(constraint => constraint instanceof InlinedForeignKeyConstraint)) {
+        if (!innerType.isPrimitive || innerType.constraints.some(constraint => constraint instanceof InlinedForeignKeyConstraint)) {
           reportDiagnostic(this.program, {
             code: "reference-array",
             format: { type: modelProperty.name },
@@ -624,29 +628,29 @@ class SQLEmitter {
     return false;
   }
 
-  emitSchemas(namespace: Namespace) {
-    const propagateModelCheck = (model: Model) => {
+  buildSchemaAST(namespace: Namespace) {
+    const visitModel = (model: Model) => {
       if (this.options.emitNonEntityTypes || this.hasEntityDecorator(model)) {
-        this.propagateModel(model);
+        this.addModel(model);
       }
     };
-    const propagateEnumCheck = (e: Enum) => {
+    const visitEnum = (e: Enum) => {
       if (this.options.emitNonEntityTypes || this.hasEntityDecorator(e)) {
-        this.propagateEnum(e);
+        this.addEnum(e);
       }
     };
-    const propagateUnionCheck = (union: Union) => {
+    const visitUnion = (union: Union) => {
       // only emit unions if they have a name or an entity-decorator
       if ((this.options.emitNonEntityTypes && union.name) || this.hasEntityDecorator(union)) {
-        this.registerUnion(union);
+        this.addUnion(union);
       }
     };
     const skipSubNamespaces = isGlobalNamespace(this.program, namespace) && !this.namespaceHasEntities(namespace);
 
     const navigationFunctionWrapper = {
-      model: propagateModelCheck,
-      enum: propagateEnumCheck,
-      union: propagateUnionCheck,
+      model: visitModel,
+      enum: visitEnum,
+      union: visitUnion,
     };
 
     navigateTypesInNamespace(
@@ -676,7 +680,7 @@ class SQLEmitter {
     }
   }
 
-  registerUnion(union: Union, property?: ModelProperty): void {
+  addUnion(union: Union, property?: ModelProperty): void {
 
     const iterator: IterableIterator<UnionVariant> = union.variants.values();
     const unionVariantArray = [...iterator];
@@ -739,7 +743,7 @@ class SQLEmitter {
       });
   }
 
-  propagateEnum(e: Enum): void {
+  addEnum(e: Enum): void {
     if (e.members.size === 0) {
       this.reportUnsupportedUnion(e, "empty");
       return;
@@ -827,7 +831,7 @@ class SQLEmitter {
     }
   }
 
-  propagateModel(model: Model): void {
+  addModel(model: Model): void {
     const table: SQLTable = new SQLTable(model);
     let gotRegistered = false;
     try {
@@ -924,7 +928,7 @@ class SQLEmitter {
 
     if (notNull) {
       if (this.hasKeyDecorator(prop)) {
-        if (table.children.some(column => column.columnConstraints
+        if (table.children.some(column => column.constraints
           .some(constraint => constraint instanceof PrimaryKeyConstraint))) {
           // we already have a primaryKeyConstraint so this MUST throw an error
           reportDiagnostic(this.program, {
@@ -934,11 +938,11 @@ class SQLEmitter {
           });
         } else {
           const primaryKeyConstraint: PrimaryKeyConstraint = new PrimaryKeyConstraint();
-          column.columnConstraints.push(primaryKeyConstraint);
+          column.constraints.push(primaryKeyConstraint);
         }
       } else {
         const notNullConstraint: NotNullConstraint = new NotNullConstraint();
-        column.columnConstraints.push(notNullConstraint);
+        column.constraints.push(notNullConstraint);
       }
     }
 
@@ -949,10 +953,10 @@ class SQLEmitter {
       this.applyReferencesDecorator(referencesDecorator, column.dataType, prop, column);
     }
 
-    if (column.dataType.isReference && column.dataType.dataType === "ModelReference") {
+    if (!column.dataType.isPrimitive && column.dataType.isForeignKey) {
       const referencedModel: Model = prop.type as Model;
       const foreignKeyConstraint: InlinedForeignKeyConstraint = new InlinedForeignKeyConstraint(referencedModel);
-      column.columnConstraints.push(foreignKeyConstraint);
+      column.constraints.push(foreignKeyConstraint);
     }
 
     this.setDefaultValues(prop, column);
@@ -963,7 +967,7 @@ class SQLEmitter {
       const defaultValue = this.getDefaultValue(prop.default);
       if (defaultValue) {
         const defaultConstraint: DefaultConstraint = new DefaultConstraint(defaultValue);
-        column.columnConstraints.push(defaultConstraint);
+        column.constraints.push(defaultConstraint);
       }
     }
 
@@ -971,7 +975,7 @@ class SQLEmitter {
       const defaultValue = this.getDefaultValue(prop.type);
       if (defaultValue) {
         const defaultConstraint: DefaultConstraint = new DefaultConstraint(defaultValue);
-        column.columnConstraints.push(defaultConstraint);
+        column.constraints.push(defaultConstraint);
       }
     }
   }
@@ -979,8 +983,8 @@ class SQLEmitter {
   getInitialDataTypeOfProperty(prop: ModelProperty) {
     let dataType: SQLColumnType | undefined;
     if (prop.type.kind === "Union") {
-      this.registerUnion(prop.type, prop);
-      dataType = { dataType: "Enum", referencedEntity: prop.type, isArray: false, isReference: true, constraints: [] };
+      this.addUnion(prop.type, prop);
+      dataType = { isForeignKey: false, typeOriginEntity: prop.type, isArray: false, isPrimitive: false, constraints: [], dataType: "Enum" };
     } else { // for every type except union types with string values
       dataType = this.getDataTypeOfModelProperty(prop.type, prop);
     }
@@ -990,7 +994,7 @@ class SQLEmitter {
   applyReferencesDecorator(referencesDecorator: DecoratorApplication, dataType: SQLColumnType, modelProperty: ModelProperty, column: SQLTableColumn) {
     // the decorator type is not typed well here. But this works
     const model: Model = (referencesDecorator.args[0]?.value as any) as Model;
-    this.propagateModel(model);
+    this.addModel(model);
     const primaryKey = this.getPrimaryKeyPropOfModel(model);
     if (primaryKey) {
       const primaryKeyDataType = this.getDataTypeOfModelProperty(model, primaryKey);
@@ -1010,7 +1014,7 @@ class SQLEmitter {
       });
     }
     const foreignKeyConstraint: InlinedForeignKeyConstraint = new InlinedForeignKeyConstraint(model);
-    column.columnConstraints.push(foreignKeyConstraint);
+    column.constraints.push(foreignKeyConstraint);
   }
 
   hasKeyDecorator(prop: ModelProperty): boolean {
@@ -1085,7 +1089,7 @@ class SQLEmitter {
         dataType: innerType,
         dataTypeString: innerType,
         isArray: false,
-        isReference: false,
+        isPrimitive: true,
         constraints: []
       };
     }
@@ -1233,7 +1237,7 @@ class SQLEmitter {
       default:
         return undefined;
     }
-    return { dataType, constraints, dataTypeString: dataType, isArray: false, isReference: false };
+    return { dataType, constraints, dataTypeString: dataType, isArray: false, isPrimitive: true };
   }
 }
 
@@ -1245,7 +1249,7 @@ class ErrorTypeFoundError extends Error {
   }
 }
 
-function serializeDocument(root: SQLRoot, fileType: FileType, newLineType: NewLineType, saveMode: boolean): string {
+function serializeAST(root: SQLRoot, fileType: FileType, newLineType: NewLineType, saveMode: boolean): string {
   if (fileType === "sql") {
     return root.toString(newLineType, saveMode);
   } else {

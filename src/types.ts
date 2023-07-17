@@ -34,7 +34,7 @@ abstract class RootLevelSQL<Child extends ToString, UInnerProperty extends ToStr
     public type: TType,
     public statement: string,
     public children: Child[] = [],
-    public innerProperties: UInnerProperty[] = [], // Default to an empty array
+    public constraints: UInnerProperty[] = [],
     public docs?: string,
     public externalDocs?: ExternalDocs | undefined,
     public secondPartOfStatement = '',
@@ -46,8 +46,8 @@ abstract class RootLevelSQL<Child extends ToString, UInnerProperty extends ToStr
   toString(lineType: NewLineType, saveMode: boolean): string {
     const docs = this.getDocs(lineType);
     const columnsString = this.children.map((column) => column.toString(lineType, saveMode)).join(`,${getNewLine(lineType)}`) + getNewLine(lineType);
-    const constraintsString = (this.innerProperties?.length ?? 0) > 0
-      ? `,${getNewLine(lineType)}` + this.innerProperties?.map((constraint) => constraint.toString(lineType, saveMode)).join(', ')
+    const constraintsString = (this.constraints?.length ?? 0) > 0
+      ? `,${getNewLine(lineType)}` + this.constraints?.map((constraint) => constraint.toString(lineType, saveMode)).join(', ')
       : '';
 
     const statementString = this.statement + (saveMode && this.useSaveMode ? " IF NOT EXISTS" : "");
@@ -94,10 +94,10 @@ export class SQLEnumFromUnion extends RootLevelSQL<SQLEnumMember, SQLEnumMember,
     public type: Union,
     public modelProperty?: ModelProperty,
     public children: SQLEnumMember[] = [],
-    public innerProperties: SQLEnumMember[] = [], // Default to an empty array
+    public constraints: SQLEnumMember[] = [], // Default to an empty array
     public docs?: string,
     public externalDocs?: ExternalDocs | undefined,
-  ) { super(type, "CREATE TYPE", children, innerProperties, docs, externalDocs, " AS ENUM"); }
+  ) { super(type, "CREATE TYPE", children, constraints, docs, externalDocs, " AS ENUM"); }
 
   getIdentifier(): string {
     return this.namingConflictResolver.getIdentifierOfRegisteredType(this.type);
@@ -108,11 +108,11 @@ export class SQLEnum extends RootLevelSQL<SQLEnumMember, SQLEnumMember, Enum> {
   constructor(
     public type: Enum,
     public children: SQLEnumMember[] = [],
-    public innerProperties: SQLEnumMember[] = [], // Default to an empty array
+    public constraints: SQLEnumMember[] = [], // Default to an empty array
     public docs?: string,
     public externalDocs?: ExternalDocs | undefined,
     public modelProperty?: ModelProperty,
-  ) { super(type, "CREATE TYPE", children, innerProperties, docs, externalDocs, " AS ENUM"); }
+  ) { super(type, "CREATE TYPE", children, constraints, docs, externalDocs, " AS ENUM"); }
 
   getIdentifier(): string {
     return this.namingConflictResolver.getIdentifierOfRegisteredType(this.type);
@@ -123,10 +123,10 @@ export class SQLTable extends RootLevelSQL<SQLTableColumn, TableConstraint, Mode
   constructor(
     public type: Model,
     public children: SQLTableColumn[] = [],
-    public innerProperties: TableConstraint[] = [], // Default to an empty array
+    public constraints: TableConstraint[] = [], // Default to an empty array
     public docs?: string,
     public externalDocs?: ExternalDocs | undefined,
-  ) { super(type, "CREATE TABLE", children, innerProperties, docs, externalDocs, undefined, true); }
+  ) { super(type, "CREATE TABLE", children, constraints, docs, externalDocs, undefined, true); }
 
   getIdentifier(): string {
     return this.namingConflictResolver.getIdentifierOfRegisteredType(this.type);
@@ -138,19 +138,19 @@ export class SQLTable extends RootLevelSQL<SQLTableColumn, TableConstraint, Mode
 }
 
 export class SQLTableColumn extends Documented {
-  public columnConstraints: ColumnConstraint[] = [];
+  public constraints: ColumnConstraint[] = [];
   constructor(
     public columnName: string,
     public dataType: SQLColumnType,
     public docs?: string,
     public externalDocs?: ExternalDocs | undefined) {
     super(docs, externalDocs);
-    this.columnConstraints = dataType.constraints;
+    this.constraints = dataType.constraints;
   }
   toString(lineType: NewLineType, saveMode: boolean): string {
     const docs = this.getDocs(lineType);
 
-    this.columnConstraints.sort((a, b) => {
+    this.constraints.sort((a, b) => {
       const aIsInlinedForeignKey = a.constraintType === "INLINED FOREIGN KEY";
       const bIsInlinedForeignKey = b.constraintType === "INLINED FOREIGN KEY";
 
@@ -163,23 +163,23 @@ export class SQLTableColumn extends Documented {
       }
     });
 
-    const constraintString = this.columnConstraints.map((constraint) => "" + constraint.toString(lineType, saveMode)).join(' ');
-    const dataTypeString = this.dataType.isReference ? this.namingConflictResolver.getIdentifierOfRegisteredType(this.dataType.referencedEntity) : this.dataType.dataTypeString;
+    const constraintString = this.constraints.map((constraint) => "" + constraint.toString(lineType, saveMode)).join(' ');
+    const dataTypeString = !this.dataType.isPrimitive ? this.namingConflictResolver.getIdentifierOfRegisteredType(this.dataType.typeOriginEntity) : this.dataType.dataTypeString;
     const saveModeString = saveMode ? "ADD COLUMN IF NOT EXISTS " : "";
     const retString = saveModeString + `${this.columnName} ${dataTypeString} ` + (this.dataType.isArray ? '[] ' : '') + constraintString;
     return indentString(docs + inlineStringIfShortEnough(retString), lineType);
   }
 
   hasForeignKeyConstraint(): boolean {
-    return this.columnConstraints.some(constraint => constraint.constraintType === "INLINED FOREIGN KEY");
+    return this.constraints.some(constraint => constraint.constraintType === "INLINED FOREIGN KEY");
   }
 
   getForeignKeyConstraint(): InlinedForeignKeyConstraint | undefined {
-    return this.columnConstraints.find(constraint => constraint.constraintType === "INLINED FOREIGN KEY") as InlinedForeignKeyConstraint;
+    return this.constraints.find(constraint => constraint.constraintType === "INLINED FOREIGN KEY") as InlinedForeignKeyConstraint;
   }
 
   removeForeignKeyConstraints(): void {
-    this.columnConstraints = this.columnConstraints.filter(constraint => constraint.constraintType !== "INLINED FOREIGN KEY");
+    this.constraints = this.constraints.filter(constraint => constraint.constraintType !== "INLINED FOREIGN KEY");
   }
 }
 
@@ -316,7 +316,7 @@ export class SQLRoot extends ToString {
     const references = table.getForeignKeyReferences();
     for (const reference of references) {
       const constraint: InlinedForeignKeyConstraint
-        = reference.columnConstraints.find(constraint => constraint.constraintType === "INLINED FOREIGN KEY") as InlinedForeignKeyConstraint;
+        = reference.constraints.find(constraint => constraint.constraintType === "INLINED FOREIGN KEY") as InlinedForeignKeyConstraint;
       if (constraint) {
         const referencedModel = constraint.getReferencedModel();
         const referencedElement = this.getRootLevelElementForType(referencedModel);
@@ -493,8 +493,8 @@ export class SQLAlterTableAddColumns extends RootLevelSQL<SQLTableColumn, TableC
 
   toString(lineType: NewLineType, saveMode: boolean): string {
     const columnsString = this.children.map((column) => column.toString(lineType, saveMode)).join(`,${getNewLine(lineType)}`) + ";";
-    const constraintsString = (this.innerProperties?.length ?? 0) > 0
-      ? `,${getNewLine(lineType)}` + this.innerProperties?.map((constraint) => constraint.toString(lineType, saveMode)).join(', ')
+    const constraintsString = (this.constraints?.length ?? 0) > 0
+      ? `,${getNewLine(lineType)}` + this.constraints?.map((constraint) => constraint.toString(lineType, saveMode)).join(', ')
       : '';
 
     const statementString = this.statement + (saveMode && this.useSaveMode ? " IF NOT EXISTS" : "");
@@ -516,34 +516,35 @@ export class SQLAlterTable extends ToString {
 
 export type VarcharType = `VARCHAR(${`${number}`})`; // This represents the "VARCHAR(any_number)" string
 
-export type SQLColumnReferenceType = {
-  isReference: true,
-  dataType: "Enum" | "ModelReference",
-  referencedEntity: Enum | Union,
+export type SQLColumnType = SQLNonPrimitiveColumnType | SQLPrimitiveColumnType;
+
+export type SQLNonPrimitiveColumnType = {
+  isPrimitive: false,
+  dataType: "Enum"
+  isForeignKey: boolean,
+  typeOriginEntity: Enum | Union, // entity that defines the SQL-Type.
   isArray: boolean,
   constraints: ColumnConstraint[],
 };
-export type SQLStandardColumnType = {
-  isReference: false,
+export type SQLPrimitiveColumnType = {
+  isPrimitive: true,
   dataType: SQLDataType,
   dataTypeString: SQLDataType | VarcharType,
   isArray: boolean,
   constraints: ColumnConstraint[],
 };
 
-export type SQLColumnType = SQLColumnReferenceType | SQLStandardColumnType;
-
 export function isSQLColumnTypeSimilar(a: SQLColumnType, b: SQLColumnType): boolean {
-  if (a.isReference !== b.isReference) {
+  if (a.isPrimitive !== b.isPrimitive) {
     return false;
-  } else if (a.isReference && b.isReference) {
-    return a.referencedEntity === b.referencedEntity;
+  } else if (!a.isPrimitive && !b.isPrimitive) {
+    return a.typeOriginEntity === b.typeOriginEntity;
   } else if (a.dataType !== b.dataType) { // only check this here as "ModelReference" and "Enum" can reference the same entity and can be equal here
     return false;
   }
   else if (a.dataType === "Enum" && b.dataType === "Enum") {
-    return a.referencedEntity === b.referencedEntity && a.isArray === b.isArray;
-  } else if (a.dataType !== "Enum" && b.dataType !== "Enum" && (!a.isReference && !b.isReference)) {
+    return a.typeOriginEntity === b.typeOriginEntity && a.isArray === b.isArray;
+  } else if (a.dataType !== "Enum" && b.dataType !== "Enum" && (a.isPrimitive && b.isPrimitive)) {
     return a.dataTypeString === b.dataTypeString && a.isArray === b.isArray;
   }
   return false;
