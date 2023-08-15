@@ -1,7 +1,7 @@
 import { expectDiagnostics } from "@typespec/compiler/testing";
 import { diagnoseSQLFor, sqlFor } from "./test-host.js";
 import { strictEqual } from "assert";
-import fs from "fs";
+import { readAndNormalize } from "./helper.js";
 const pathPrefix = './test/assets/references/';
 
 describe("Model Referencing", () => {
@@ -21,7 +21,7 @@ describe("Model Referencing", () => {
             }    
         `);
         const filePath = pathPrefix + "cyclic.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -70,7 +70,7 @@ describe("Model Referencing", () => {
             }    
         `);
         const filePath = pathPrefix + "simple.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -92,7 +92,7 @@ describe("Model Referencing", () => {
             }
         `);
         const filePath = pathPrefix + "multiple-manual.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -116,7 +116,7 @@ describe("Model Referencing", () => {
             }
         `);
         const filePath = pathPrefix + "multiple-automatic.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -190,7 +190,7 @@ describe("Model Referencing", () => {
             }
         `);
         const filePath = pathPrefix + "cyclic-and-referenced.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -219,7 +219,7 @@ describe("Model Referencing", () => {
             }
         `);
         const filePath = pathPrefix + "cyclic-and-non-cyclic.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -237,7 +237,7 @@ describe("Model Referencing", () => {
             }
         `);
         const filePath = pathPrefix + "reference-decorator.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -312,7 +312,7 @@ describe("Model Referencing", () => {
             }
         `);
         const filePath = pathPrefix + "manual-self-references.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -325,7 +325,7 @@ describe("Model Referencing", () => {
             }
         `);
         const filePath = pathPrefix + "automatic-self-references.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -344,7 +344,7 @@ describe("Model Referencing", () => {
             }
         `);
         const filePath = pathPrefix + "manual-referencing-namespaces.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -373,7 +373,7 @@ describe("Model Referencing", () => {
         }
         `);
         const filePath = pathPrefix + "reference-automatic-inheritance.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
 
         strictEqual(res, expectedSQL);
     });
@@ -406,7 +406,7 @@ describe("Model Referencing", () => {
         }
         `);
         const filePath = pathPrefix + "reference-manual-inheritance.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
 
         strictEqual(res, expectedSQL);
     });
@@ -454,7 +454,7 @@ describe("Model Referencing", () => {
             }
         `);
         const filePath = pathPrefix + "enum-references.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -481,7 +481,7 @@ describe("Model Referencing", () => {
             }
         `);
         const filePath = pathPrefix + "uuid-references.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -522,7 +522,7 @@ describe("Model Referencing", () => {
           `
         );
         const filePath = pathPrefix + "added-entity.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -598,7 +598,7 @@ describe("Model Referencing", () => {
             },
         ]);
         const filePath = pathPrefix + "manual-references-objects.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -649,7 +649,7 @@ describe("Model Referencing", () => {
             },
         ]);
         const filePath = pathPrefix + "automatic-references-objects.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -714,7 +714,7 @@ describe("Model Referencing", () => {
           `
         );
         const filePath = pathPrefix + "references-types.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -746,7 +746,7 @@ describe("Model Referencing", () => {
         
         `);
         const filePath = pathPrefix + "enum-member-references.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
       });
 });

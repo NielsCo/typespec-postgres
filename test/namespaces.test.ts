@@ -1,7 +1,7 @@
 import { expectDiagnostics } from "@typespec/compiler/testing";
 import { diagnoseSQLFor, sqlFor } from "./test-host.js";
 import { strictEqual } from "assert";
-import fs from "fs";
+import { readAndNormalize } from "./helper.js";
 const pathPrefix = './test/assets/namespaces/';
 
 describe("Namespaces", () => {
@@ -27,7 +27,7 @@ describe("Namespaces", () => {
         );
 
         const filePath = pathPrefix + "name-collision.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
 
         strictEqual(res, expectedSQL);
     });
@@ -47,7 +47,7 @@ describe("Namespaces", () => {
         );
 
         const filePath = pathPrefix + "union-type-emit.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
 
         strictEqual(res, expectedSQL);
     });
@@ -83,7 +83,7 @@ describe("Namespaces", () => {
         `, undefined, { "emit-non-entity-types": true });
 
         const filePath = pathPrefix + "nested-without-decorator.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
 
         strictEqual(res, expectedSQL);
     });
@@ -120,7 +120,7 @@ describe("Namespaces", () => {
         );
 
         const filePath = pathPrefix + "nested.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
 
         strictEqual(res, expectedSQL);
     });
@@ -145,7 +145,7 @@ describe("Namespaces", () => {
         );
 
         const filePath = pathPrefix + "nested-enum-reference.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
 
         strictEqual(res, expectedSQL);
     });
@@ -173,7 +173,7 @@ describe("Namespaces", () => {
         );
 
         const filePath = pathPrefix + "nested-entity-name.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
 
         strictEqual(res, expectedSQL);
     });
@@ -261,7 +261,7 @@ describe("Namespaces", () => {
         ]);
         const res = await sqlFor(code, undefined, undefined, true);
         const filePath = pathPrefix + "namespace-collision.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -291,7 +291,7 @@ describe("Namespaces", () => {
         ]);
         const res = await sqlFor(code, undefined, undefined, true);
         const filePath = pathPrefix + "namespaces-colliding.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 });

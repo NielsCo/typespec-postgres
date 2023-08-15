@@ -1,7 +1,7 @@
 import { expectDiagnostics } from "@typespec/compiler/testing";
 import { diagnoseSQLFor, sqlFor } from "./test-host.js";
 import { strictEqual } from "assert";
-import fs from "fs";
+import { readAndNormalize } from "./helper.js";
 const pathPrefix = './test/assets/types/';
 
 describe("Built-In Types", () => {
@@ -27,7 +27,7 @@ describe("Built-In Types", () => {
               
         `);
         const filePath = pathPrefix + "numeric.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -44,7 +44,7 @@ describe("Built-In Types", () => {
               
         `);
         const filePath = pathPrefix + "time.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -57,7 +57,7 @@ describe("Built-In Types", () => {
             }
         `);
         const filePath = pathPrefix + "byte-bool.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -99,7 +99,7 @@ describe("Built-In Types", () => {
             }
         `);
         const filePath = pathPrefix + "record.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -111,7 +111,7 @@ describe("Built-In Types", () => {
             }
         `);
         const filePath = pathPrefix + "record-array.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 

@@ -1,7 +1,7 @@
 import { expectDiagnostics } from "@typespec/compiler/testing";
 import { diagnoseSQLFor, sqlFor } from "./test-host.js";
 import { strictEqual } from "assert";
-import fs from "fs";
+import { readAndNormalize } from "./helper.js";
 const pathPrefix = './test/assets/decorators/';
 
 describe("Decorators", () => {
@@ -15,7 +15,7 @@ describe("Decorators", () => {
       };
     `);
     const filePath = pathPrefix + "minLength.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -27,7 +27,7 @@ describe("Decorators", () => {
       };
     `);
     const filePath = pathPrefix + "maxLength.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -39,7 +39,7 @@ describe("Decorators", () => {
       };
     `);
     const filePath = pathPrefix + "minMaxLength.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -51,7 +51,7 @@ describe("Decorators", () => {
       };
     `);
     const filePath = pathPrefix + "minMaxValue.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -63,7 +63,7 @@ describe("Decorators", () => {
       };
     `);
     const filePath = pathPrefix + "exclusiveMinMaxValue.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -74,7 +74,7 @@ describe("Decorators", () => {
     };
     `, undefined, { "emit-non-entity-types": true });
     const filePath = pathPrefix + "emitter-options.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
 
     strictEqual(res, expectedSQL);
   });
@@ -87,7 +87,7 @@ describe("Decorators", () => {
       };
     `);
     const filePath = pathPrefix + "key.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
 
     strictEqual(res, expectedSQL);
   });
@@ -253,7 +253,7 @@ describe("Decorators", () => {
     }]);
     const res = await sqlFor(code, undefined, undefined, true);
     const filePath = pathPrefix + "custom-scalars-arrays.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -268,7 +268,7 @@ describe("Decorators", () => {
     `;
     const res = await sqlFor(code);
     const filePath = pathPrefix + "uuid-arrays.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -292,7 +292,7 @@ describe("Decorators", () => {
     ]);
     const res = await sqlFor(code, undefined, undefined, true);
     const filePath = pathPrefix + "uuid-arrays.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -307,7 +307,7 @@ describe("Decorators", () => {
       };
     `);
     const filePath = pathPrefix + "custom-scalars.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -324,7 +324,7 @@ describe("Decorators", () => {
       };
     `);
     const filePath = pathPrefix + "custom-scalars-doc.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -351,7 +351,7 @@ describe("Decorators", () => {
     scalar uuid extends string;
     `);
     const filePath = pathPrefix + "inherited-decorators.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
 
     strictEqual(res, expectedSQL);
   });
@@ -483,7 +483,7 @@ describe("Decorators", () => {
     ]);
     const res = await sqlFor(code, undefined, undefined, true);
     const filePath = pathPrefix + "unknown-format.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 

@@ -1,6 +1,7 @@
 import { expectDiagnostics } from "@typespec/compiler/testing";
 import { diagnoseSQLFor, sqlFor } from "./test-host.js";
 import { strictEqual } from "assert";
+import { readAndNormalize } from "./helper.js";
 import fs from "fs";
 const pathPrefix = './test/assets/basic/';
 
@@ -12,7 +13,7 @@ describe("basic tests", () => {
       };
     `);
     const filePath = pathPrefix + "optionalEntity.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -23,7 +24,7 @@ describe("basic tests", () => {
       };
     `);
     const filePath = pathPrefix + "requiredEntity.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -68,11 +69,11 @@ describe("basic tests", () => {
       ["v1", "v2", "v3"]
     );
     const filePathV1 = pathPrefix + "v1.sql";
-    const expectedSQLv1 = await fs.promises.readFile(filePathV1, "utf-8");
+    const expectedSQLv1 = await readAndNormalize(filePathV1);
     const filePathV2 = pathPrefix + "v2.sql";
-    const expectedSQLv2 = await fs.promises.readFile(filePathV2, "utf-8");
+    const expectedSQLv2 = await readAndNormalize(filePathV2);
     const filePathV3 = pathPrefix + "v3.sql";
-    const expectedSQLv3 = await fs.promises.readFile(filePathV3, "utf-8");
+    const expectedSQLv3 = await readAndNormalize(filePathV3);
 
     strictEqual(v1, expectedSQLv1);
     strictEqual(v2, expectedSQLv2);
@@ -89,7 +90,7 @@ describe("basic tests", () => {
       };
     `);
     const filePath = pathPrefix + "enum.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
 
     strictEqual(res, expectedSQL);
   });
@@ -179,7 +180,7 @@ describe("basic tests", () => {
     }
     `);
     const filePath = pathPrefix + "docs.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
 
     strictEqual(res, expectedSQL);
   });
@@ -205,7 +206,7 @@ describe("basic tests", () => {
     scalar UUID extends string;
     `);
     const filePath = pathPrefix + "inheritance.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
 
     strictEqual(res, expectedSQL);
   });
@@ -280,7 +281,7 @@ describe("basic tests", () => {
     
     `);
     const filePath = pathPrefix + "generics.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -320,7 +321,7 @@ describe("basic tests", () => {
     
     `);
     const filePath = pathPrefix + "literal-object.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -338,7 +339,7 @@ describe("basic tests", () => {
     
     `);
     const filePath = pathPrefix + "literal-object.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -401,7 +402,7 @@ describe("basic tests", () => {
     
     `);
     const filePath = pathPrefix + "enum-members.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 });

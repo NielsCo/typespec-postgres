@@ -1,6 +1,6 @@
 import { sqlFor } from "./test-host.js";
 import { strictEqual } from "assert";
-import fs from "fs";
+import { readAndNormalize } from "./helper.js";
 const pathPrefix = './test/assets/examples/';
 
 // test all examples from the TypeSpec playground
@@ -37,7 +37,7 @@ describe("examples", () => {
         }
     `);
         const filePath = pathPrefix + "discriminator.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -76,7 +76,7 @@ describe("examples", () => {
         
     `, undefined, { "emit-non-entity-types": true });
         const filePath = pathPrefix + "http-service.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -101,7 +101,7 @@ describe("examples", () => {
         }
     `, undefined, { "emit-non-entity-types": true });
         const filePath = pathPrefix + "rest-framework.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -136,7 +136,7 @@ describe("examples", () => {
     //     }
     // `, undefined, { "emit-non-entity-types": true });
     //     const filePath = pathPrefix + "rest-framework.sql";
-    //     const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    //     const expectedSQL = await readAndNormalize(filePath)
     //     strictEqual(res, expectedSQL);
     // });
 });
