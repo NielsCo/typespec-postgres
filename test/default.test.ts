@@ -1,6 +1,6 @@
 import { sqlFor } from "./test-host.js";
 import { strictEqual } from "assert";
-import fs from "fs";
+import { readAndNormalize } from "./helper.js";
 const pathPrefix = './test/assets/default/';
 
 describe("Default Values", () => {
@@ -23,7 +23,7 @@ describe("Default Values", () => {
             };
         `);
         const filePath = pathPrefix + "default.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 });

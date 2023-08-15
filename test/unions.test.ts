@@ -1,7 +1,7 @@
 import { expectDiagnostics } from "@typespec/compiler/testing";
 import { diagnoseSQLFor, sqlFor } from "./test-host.js";
 import { strictEqual } from "assert";
-import fs from "fs";
+import { readAndNormalize } from "./helper.js";
 const pathPrefix = './test/assets/unions/';
 
 // test all examples from the TypeSpec playground
@@ -30,7 +30,7 @@ describe("unions", () => {
 
         const res = await sqlFor(code, undefined, undefined, true);
         const filePath = pathPrefix + "union-conflict.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -46,7 +46,7 @@ describe("unions", () => {
         const diagnostics = await diagnoseSQLFor(code);
         const res = await sqlFor(code, undefined, undefined, true);
         const filePath = pathPrefix + "anonymous-union-conflict.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
 
         expectDiagnostics(diagnostics, [
@@ -74,7 +74,7 @@ describe("unions", () => {
         }
     `);
         const filePath = pathPrefix + "unions.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -87,7 +87,7 @@ describe("unions", () => {
         }
     `);
         const filePath = pathPrefix + "name-unions.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -107,7 +107,7 @@ describe("unions", () => {
         }
     `);
         const filePath = pathPrefix + "named-unions.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -123,7 +123,7 @@ describe("unions", () => {
         }
     `);
         const filePath = pathPrefix + "emit-union.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 

@@ -1,6 +1,6 @@
 import { sqlFor } from "./test-host.js";
 import { strictEqual } from "assert";
-import fs from "fs";
+import { readAndNormalize } from "./helper.js";
 const pathPrefix = './test/assets/save-mode/';
 
 describe("save-mode", () => {
@@ -26,7 +26,7 @@ describe("save-mode", () => {
             , undefined, { "save-mode": true });
 
         const filePath = pathPrefix + "name-collision-save.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
 
         strictEqual(res, expectedSQL);
     });
@@ -63,7 +63,7 @@ describe("save-mode", () => {
             , undefined, { "save-mode": true });
 
         const filePath = pathPrefix + "nested-save.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
 
         strictEqual(res, expectedSQL);
     });
@@ -83,7 +83,7 @@ describe("save-mode", () => {
             }    
         `, undefined, { "save-mode": true });
         const filePath = pathPrefix + "cyclic-save.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -100,7 +100,7 @@ describe("save-mode", () => {
             }    
         `, undefined, { "save-mode": true });
         const filePath = pathPrefix + "simple-save.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -122,7 +122,7 @@ describe("save-mode", () => {
             }
         `, undefined, { "save-mode": true });
         const filePath = pathPrefix + "multiple-manual-save.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -149,7 +149,7 @@ describe("save-mode", () => {
 
         `, undefined, { "save-mode": true });
         const filePath = pathPrefix + "multiple-automatic-save.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -174,7 +174,7 @@ describe("save-mode", () => {
             }
         `, undefined, { "save-mode": true });
         const filePath = pathPrefix + "cyclic-and-referenced-save.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -203,7 +203,7 @@ describe("save-mode", () => {
             }
         `, undefined, { "save-mode": true });
         const filePath = pathPrefix + "cyclic-and-non-cyclic-save.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -221,7 +221,7 @@ describe("save-mode", () => {
             }
         `, undefined, { "save-mode": true });
         const filePath = pathPrefix + "reference-decorator-save.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -234,7 +234,7 @@ describe("save-mode", () => {
             }
         `, undefined, { "save-mode": true });
         const filePath = pathPrefix + "manual-self-references-save.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -247,7 +247,7 @@ describe("save-mode", () => {
             }
         `, undefined, {"save-mode": true});
         const filePath = pathPrefix + "automatic-self-references-save.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -266,7 +266,7 @@ describe("save-mode", () => {
             }
         `, undefined, { "save-mode": true });
         const filePath = pathPrefix + "manual-referencing-namespaces-save.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
 
@@ -295,7 +295,7 @@ describe("save-mode", () => {
         }
         `, undefined, { "save-mode": true });
         const filePath = pathPrefix + "reference-automatic-inheritance-save.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
 
         strictEqual(res, expectedSQL);
     });
@@ -328,7 +328,7 @@ describe("save-mode", () => {
         }
         `, undefined, { "save-mode": true });
         const filePath = pathPrefix + "reference-manual-inheritance-save.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
 
         strictEqual(res, expectedSQL);
     });
@@ -344,7 +344,7 @@ describe("save-mode", () => {
           };
         `, undefined, { "save-mode": true });
         const filePath = pathPrefix + "enum-save.sql";
-        const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+        const expectedSQL = await readAndNormalize(filePath)
     
         strictEqual(res, expectedSQL);
       });

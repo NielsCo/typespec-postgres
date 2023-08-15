@@ -1,7 +1,7 @@
 import { expectDiagnostics } from "@typespec/compiler/testing";
 import { diagnoseSQLFor, sqlFor } from "./test-host.js";
 import { strictEqual } from "assert";
-import fs from "fs";
+import { readAndNormalize } from "./helper.js";
 const pathPrefix = './test/assets/arrays/';
 
 describe("arrays", () => {
@@ -73,7 +73,7 @@ describe("arrays", () => {
     };
   `);
     const filePath = pathPrefix + "basic-array.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -88,7 +88,7 @@ describe("arrays", () => {
     };
     `);
     const filePath = pathPrefix + "primary-key-array.sql";
-    const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+    const expectedSQL = await readAndNormalize(filePath)
     strictEqual(res, expectedSQL);
   });
 
@@ -106,7 +106,7 @@ describe("arrays", () => {
   //     };
   //   `);
   //   const filePath = pathPrefix + "basic-array.sql";
-  //   const expectedSQL = await fs.promises.readFile(filePath, "utf-8");
+  //   const expectedSQL = await readAndNormalize(filePath)
   //   strictEqual(res, expectedSQL);
   // });
 });
