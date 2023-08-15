@@ -95,12 +95,6 @@ const libDefinition = {
         default: paramMessage`Can not create the entity '${"type"}' as its name is a reserved keyword in PostgreSQL`,
       },
     },
-    "multiple-key-declarations": {
-      severity: "error",
-      messages: {
-        default: paramMessage`Can not add Model property '${"type"}' as key because there already exists another key`,
-      },
-    },
     "namespace-name-collision": {
       severity: "warning",
       messages: {

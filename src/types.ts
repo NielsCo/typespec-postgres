@@ -4,7 +4,7 @@ import { DirectedGraph } from "./graph.js";
 import { NewLineType } from "./lib.js";
 import { IoCContainer, wrapIdentifierType } from "./naming-resolver.js";
 
-export type ConstraintType = 'PRIMARY KEY' | 'UNIQUE' | 'CHECK' | 'INLINED FOREIGN KEY' | "DEFAULT" | "NOT NULL";
+export type ConstraintType = 'PRIMARY KEY' | 'UNIQUE' | 'CHECK' | 'INLINED FOREIGN KEY' | "DEFAULT" | "NOT NULL" | "COMPOSITE KEY";
 
 abstract class ToString {
   protected namingConflictResolver;
@@ -124,6 +124,7 @@ export class SQLTable extends RootLevelSQL<SQLTableColumn, TableConstraint, Mode
     public type: Model,
     public children: SQLTableColumn[] = [],
     public constraints: TableConstraint[] = [], // Default to an empty array
+    public primaryKey: SQLTableColumn[] = [],
     public docs?: string,
     public externalDocs?: ExternalDocs | undefined,
   ) { super(type, "CREATE TABLE", children, constraints, docs, externalDocs, undefined, true); }
@@ -134,6 +135,40 @@ export class SQLTable extends RootLevelSQL<SQLTableColumn, TableConstraint, Mode
 
   getForeignKeyReferences(): SQLTableColumn[] {
     return this.children.filter(column => column.hasForeignKeyConstraint());
+  }
+
+  toString(lineType: NewLineType, saveMode: boolean): string {
+    const docs = this.getDocs(lineType);
+    let columnsString = this.children.map((column) => {
+      if (this.primaryKey.length === 1 && this.primaryKey.includes(column)) {
+        const primaryKeyConstraint: PrimaryKeyConstraint = new PrimaryKeyConstraint();
+        column.constraints.push(primaryKeyConstraint);
+      }
+      return column.toString(lineType, saveMode)
+    }
+    ).join(`,${getNewLine(lineType)}`);
+
+    if (this.primaryKey.length > 1 && !saveMode) {
+      this.constraints.push(new CompositePrimaryKeyConstraint(this.primaryKey))
+    }
+
+    let constraintsString = this.constraints?.map((constraint) => indentString(constraint.toString(lineType, saveMode), lineType))
+      .join(`,${getNewLine(lineType)}`).concat(getNewLine(lineType));
+    if (this.constraints?.length ?? 0) {
+      if (this.children.length > 0) {
+        columnsString = columnsString + ',' + getNewLine(lineType);
+      } else {
+        columnsString = columnsString + getNewLine(lineType)
+      }
+    }
+
+    const statementString = this.statement + (saveMode && this.useSaveMode ? " IF NOT EXISTS" : "");
+    const secondPartOfStatementString = (this.secondPartOfStatement ? this.secondPartOfStatement + '' : '');
+    const spacingInNonSaveMode = (saveMode && this.useSaveMode ? "" : " ");
+
+    const retString = `${statementString} ${this.getIdentifier()}${secondPartOfStatementString}${spacingInNonSaveMode}(${getNewLine(lineType)}`
+      + `${columnsString}${constraintsString});`;
+    return docs + inlineStringIfShortEnough(retString);
   }
 }
 
@@ -197,7 +232,7 @@ export abstract class SimpleConstraint extends ToString {
   }
 }
 
-export type TableConstraint = CheckConstraint;
+export type TableConstraint = CheckConstraint | CompositePrimaryKeyConstraint;
 
 export abstract class NamedConstraint extends SimpleConstraint {
   abstract constraintString: string;
@@ -252,6 +287,18 @@ export class UniqueConstraint extends NamedConstraint {
   constraintString: string = "UNIQUE";
 }
 
+export class CompositePrimaryKeyConstraint extends SimpleConstraint {
+  constraintType: "COMPOSITE KEY" = "COMPOSITE KEY" as const;
+  constraintString: string = "PRIMARY KEY";
+  constructor(public keys: SQLTableColumn[]) {
+    super();
+  }
+  toString(_lineType: NewLineType, _saveMode: boolean): string {
+    const columnNames: string = this.keys.map(col => col.columnName).join(', ');;
+    return _saveMode ? "ADD " + this.constraintString + " (" + columnNames + ")" : this.constraintString + " (" + columnNames + ")"
+  }
+}
+
 export class PrimaryKeyConstraint extends SimpleConstraint {
   constraintType: "PRIMARY KEY" = "PRIMARY KEY" as const;
   constraintString: string = "PRIMARY KEY";
@@ -259,7 +306,6 @@ export class PrimaryKeyConstraint extends SimpleConstraint {
 
 export type ColumnConstraint = InlinedForeignKeyConstraint | PrimaryKeyConstraint | UniqueConstraint |
   NotNullConstraint | CheckConstraint | DefaultConstraint;
-
 /**
  * always used the public key if no Property is specified
  */
@@ -380,7 +426,7 @@ export class SQLRoot extends ToString {
     if (saveMode) {
       for (const table of tables) {
         if (table.children.length > 0) { // TODO: check whether we actually need this (with a test!)
-          const alterTableStatement = new SQLAlterTableAddColumns(table.type, [...table.children]);
+          const alterTableStatement = new SQLAlterTableAddColumns(table.type, [...table.children], table.primaryKey);
           table.children = [];
           saveAlterTableStatements.push(alterTableStatement);
         }
@@ -388,7 +434,7 @@ export class SQLRoot extends ToString {
       // remove all columns from tables. Then add them to ALTER-TABLE-Statements
     }
 
-    let sortedElements: (SQLEnum | SQLTable | SQLSchema | SQLAlterTable | SQLEnumFromUnion)[] = this.sortRootLevelElements(otherElements);
+    let sortedElements: (SQLEnum | SQLTable | SQLSchema | SQLAlterTable | SQLEnumFromUnion | SQLAlterTableAddColumns)[] = this.sortRootLevelElements(otherElements);
     sortedElements = sortedElements.concat(...tables);
     sortedElements = sortedElements.concat(...saveAlterTableStatements).concat(...alterTableStatements);
     return sortedElements.map(rootLevelElement => rootLevelElement.toString(lineType, saveMode)).join(getNewLine(lineType, 2));
@@ -478,7 +524,8 @@ export class SQLRoot extends ToString {
 export class SQLAlterTableAddColumns extends RootLevelSQL<SQLTableColumn, TableConstraint, Model> {
   constructor(
     public type: Model,
-    public children: SQLTableColumn[] = []
+    public children: SQLTableColumn[] = [],
+    public primaryKey: SQLTableColumn[] = []
   ) {
     super(type, "ALTER TABLE IF EXISTS", children, []);
   }
@@ -492,16 +539,32 @@ export class SQLAlterTableAddColumns extends RootLevelSQL<SQLTableColumn, TableC
   }
 
   toString(lineType: NewLineType, saveMode: boolean): string {
-    const columnsString = this.children.map((column) => column.toString(lineType, saveMode)).join(`,${getNewLine(lineType)}`) + ";";
-    const constraintsString = (this.constraints?.length ?? 0) > 0
-      ? `,${getNewLine(lineType)}` + this.constraints?.map((constraint) => constraint.toString(lineType, saveMode)).join(', ')
-      : '';
+    let columnsString = this.children.map((column) => {
+      if (this.primaryKey.length === 1 && this.primaryKey.includes(column)) {
+        const primaryKeyConstraint: PrimaryKeyConstraint = new PrimaryKeyConstraint();
+        column.constraints.push(primaryKeyConstraint);
+      }
+      return column.toString(lineType, saveMode)
+    }).join(`,${getNewLine(lineType)}`);
 
+    if (this.primaryKey.length > 1) {
+      this.constraints.push(new CompositePrimaryKeyConstraint(this.primaryKey))
+    }
+
+    let constraintsString = this.constraints?.map((constraint) => indentString(constraint.toString(lineType, saveMode), lineType))
+      .join(`,${getNewLine(lineType)}`);
+    if (this.constraints?.length ?? 0) {
+      if (this.children.length > 0) {
+        columnsString = columnsString + ',' + getNewLine(lineType);
+      } else {
+        columnsString = columnsString + getNewLine(lineType)
+      }
+    }
     const statementString = this.statement + (saveMode && this.useSaveMode ? " IF NOT EXISTS" : "");
     const secondPartOfStatementString = (this.secondPartOfStatement ? this.secondPartOfStatement + '' : '');
 
     const retString = `${statementString} ${this.getIdentifier()}${secondPartOfStatementString}${getNewLine(lineType)}`
-      + `${columnsString}${constraintsString}`;
+      + `${columnsString}${constraintsString}` + ";";
     return inlineStringIfShortEnough(retString);
   }
 }

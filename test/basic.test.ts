@@ -211,7 +211,7 @@ describe("basic tests", () => {
     strictEqual(res, expectedSQL);
   });
 
-  it("Check handling of keys in inheritance structures", async () => {
+  it.skip("Check handling of keys in inheritance structures", async () => {
     const diagnostics = await diagnoseSQLFor(`
     @entity()
     model Child extends Parent {

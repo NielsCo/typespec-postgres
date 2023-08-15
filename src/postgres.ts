@@ -248,33 +248,21 @@ class SQLEmitter {
     return type.decorators.some(decorator => decorator.decorator.name === entityDecoratorString);
   }
 
-  getPrimaryKeyPropOfModel(model: Model): ModelProperty | undefined {
+  getPrimaryKeyPropsOfModel(model: Model): ModelProperty[] {
     // we also have to check all models the referenced model inherits from
+    const propArray: ModelProperty[] = [];
     for (const prop of walkPropertiesInherited(model)) {
       if (this.hasKeyDecorator(prop)) {
-        return prop;
+        propArray.push(prop);
       }
     }
-    return undefined;
+    return propArray;
   }
 
   /**
-   * Returns the data type of the primary key of the model or undefined
-   */
-  dataTypeOfPrimaryKey(model: Model): SQLColumnType | undefined {
-    const table = this.root.getRootLevelElementForType(model);
-    if (table && table instanceof SQLTable) {
-      const primaryKey = this.getPrimaryKeyPropOfModel(model);
-      if (primaryKey) {
-        return this.getDataTypeOfModelProperty(primaryKey.type, primaryKey);
-      } else {
-        return undefined;
-      }
-      // this is good so we can actually reference it
-    } else {
-      throw Error("referencing something that isn't a table yet");
-    }
-  }
+     * Returns the data type of the primary key of the model or undefined
+     */
+
 
   handleDataTypeOfModel(model: Model, modelProperty: ModelProperty): SQLColumnType | undefined {
     let dataType: SQLColumnType | undefined;
@@ -285,36 +273,47 @@ class SQLEmitter {
       dataType = this.getInnerDataTypeOfArray(model, modelProperty);
     } else {
       this.addModel(model);
-      const referenceDataType = this.dataTypeOfPrimaryKey(model);
-      if (!referenceDataType) {
+      const primaryKeysOfReferencedModel = this.getPrimaryKeyPropsOfModel(model);
+      if (primaryKeysOfReferencedModel.length === 0) {
         reportDiagnostic(this.program, {
           code: "reference-without-key",
           format: { type: model.name },
           target: model,
         });
         return undefined;
+      } else if (primaryKeysOfReferencedModel.length === 1) {
+        dataType = this.getDataTypeOfSinglePrimaryKey(primaryKeysOfReferencedModel[0], model)
       } else {
-        if (!referenceDataType.isPrimitive) {
-          dataType = {
-            typeOriginEntity: referenceDataType.typeOriginEntity,
-            isArray: referenceDataType.isArray,
-            isPrimitive: false,
-            constraints: [],
-            dataType: "Enum",
-            isForeignKey: true
-          };
-        } else {
-          dataType = {
-            dataType: referenceDataType.dataType,
-            dataTypeString: referenceDataType?.dataTypeString,
-            isArray: referenceDataType?.isArray,
-            isPrimitive: true,
-            constraints: [new InlinedForeignKeyConstraint(model)]
-          };
-        }
+        // TODO: actually have to add multiple model Properties here!
       }
+
     }
     return dataType;
+  }
+
+  getDataTypeOfSinglePrimaryKey(modelProperty: ModelProperty, referencedModel: Model): SQLColumnType | undefined {
+    const referenceDataType = this.getDataTypeOfModelProperty(modelProperty.type, modelProperty);
+    if (referenceDataType) {
+      if (!referenceDataType.isPrimitive) {
+        return {
+          typeOriginEntity: referenceDataType.typeOriginEntity,
+          isArray: referenceDataType.isArray,
+          isPrimitive: false,
+          constraints: [],
+          dataType: "Enum",
+          isForeignKey: true
+        };
+      } else {
+        return {
+          dataType: referenceDataType.dataType,
+          dataTypeString: referenceDataType?.dataTypeString,
+          isArray: referenceDataType?.isArray,
+          isPrimitive: true,
+          constraints: [new InlinedForeignKeyConstraint(referencedModel)]
+        };
+      }
+    }
+    return undefined;
   }
 
   getDataTypeOfModelProperty(type: Type, modelProperty: ModelProperty, columnName?: string): SQLColumnType | undefined {
@@ -928,18 +927,7 @@ class SQLEmitter {
 
     if (notNull) {
       if (this.hasKeyDecorator(prop)) {
-        if (table.children.some(column => column.constraints
-          .some(constraint => constraint instanceof PrimaryKeyConstraint))) {
-          // we already have a primaryKeyConstraint so this MUST throw an error
-          reportDiagnostic(this.program, {
-            code: "multiple-key-declarations",
-            format: { type: prop.name },
-            target: prop,
-          });
-        } else {
-          const primaryKeyConstraint: PrimaryKeyConstraint = new PrimaryKeyConstraint();
-          column.constraints.push(primaryKeyConstraint);
-        }
+        table.primaryKey.push(column);
       } else {
         const notNullConstraint: NotNullConstraint = new NotNullConstraint();
         column.constraints.push(notNullConstraint);
@@ -995,8 +983,9 @@ class SQLEmitter {
     // the decorator type is not typed well here. But this works
     const model: Model = (referencesDecorator.args[0]?.value as any) as Model;
     this.addModel(model);
-    const primaryKey = this.getPrimaryKeyPropOfModel(model);
-    if (primaryKey) {
+    const primaryKeys = this.getPrimaryKeyPropsOfModel(model);
+    if (primaryKeys.length === 1) {
+      const primaryKey = primaryKeys[0];
       const primaryKeyDataType = this.getDataTypeOfModelProperty(model, primaryKey);
       const similar = primaryKeyDataType ? isSQLColumnTypeSimilar(dataType, primaryKeyDataType) : false;
       if (!similar) {
@@ -1006,6 +995,8 @@ class SQLEmitter {
           target: modelProperty,
         });
       }
+    } else if (primaryKeys.length > 1) {
+      // TODO: implement this
     } else {
       reportDiagnostic(this.program, {
         code: "references-has-no-key",
