@@ -969,7 +969,7 @@ class SQLEmitter {
             columns.push(column);
           }
         }
-        table.constraints.push(new CompositeForeignKeyConstraint(columns));
+        table.constraints.push(new CompositeForeignKeyConstraint(columns, model));
       }
     }
 

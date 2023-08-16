@@ -50,6 +50,24 @@ describe("Partial Keys", () => {
         strictEqual(res, expectedSQL);
     });
 
+    it("Should hoist when composite-keys exist", async () => {
+        const res = await sqlFor(`
+            @entity()
+            model OtherTest {
+                test: Test;
+            }
+
+            @entity()
+            model Test {
+                @key otherKey: numeric,
+                @key myId: numeric
+            }
+        `);
+        const filePath = pathPrefix + "hoist-composite-key.sql";
+        const expectedSQL = await readAndNormalize(filePath)
+        strictEqual(res, expectedSQL);
+    });
+
     it("Should not allow cyclic references without keys", async () => {
         const diagnostics = await diagnoseSQLFor(`
             @entity()

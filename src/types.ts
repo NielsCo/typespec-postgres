@@ -133,7 +133,7 @@ export class SQLTable extends RootLevelSQL<SQLTableColumn, TableConstraint, Mode
     return this.namingConflictResolver.getIdentifierOfRegisteredType(this.type);
   }
 
-  getForeignKeyReferences(): SQLTableColumn[] {
+  getColumnsWithForeignKeyReferences(): SQLTableColumn[] {
     return this.children.filter(column => column.hasForeignKeyConstraint());
   }
 
@@ -169,6 +169,18 @@ export class SQLTable extends RootLevelSQL<SQLTableColumn, TableConstraint, Mode
     const retString = `${statementString} ${this.getIdentifier()}${secondPartOfStatementString}${spacingInNonSaveMode}(${getNewLine(lineType)}`
       + `${columnsString}${constraintsString});`;
     return docs + inlineStringIfShortEnough(retString);
+  }
+
+  hasForeignKeyConstraints(): boolean {
+    return this.constraints.some(constraint => constraint.constraintType === "COMPOSITE FOREIGN KEY");
+  }
+
+  getForeignKeyConstraints(): CompositeForeignKeyConstraint[] {
+    return this.constraints.filter(constraint => constraint.constraintType === "COMPOSITE FOREIGN KEY") as CompositeForeignKeyConstraint[];
+  }
+
+  removeForeignKeyConstraints(): void {
+    this.constraints = this.constraints.filter(constraint => constraint.constraintType !== "COMPOSITE FOREIGN KEY");
   }
 }
 
@@ -302,11 +314,11 @@ export class CompositePrimaryKeyConstraint extends SimpleConstraint {
 export class CompositeForeignKeyConstraint extends SimpleConstraint {
   constraintType: "COMPOSITE FOREIGN KEY" = "COMPOSITE FOREIGN KEY" as const;
   constraintString: string = "FOREIGN KEY";
-  constructor(public keys: SQLTableColumn[]) {
+  constructor(public keyMembers: SQLTableColumn[], public referencedModel: Model) {
     super();
   }
   toString(_lineType: NewLineType, _saveMode: boolean): string {
-    const columnNames: string = this.keys.map(col => col.columnName).join(', ');;
+    const columnNames: string = this.keyMembers.map(col => col.columnName).join(', ');;
     return _saveMode ? "ADD " + this.constraintString + " (" + columnNames + ")" : this.constraintString + " (" + columnNames + ")"
   }
 }
@@ -371,8 +383,8 @@ export class SQLRoot extends ToString {
   }
 
   private addReferencesToGraph(table: SQLTable, graph: DirectedGraph<SQLTable>) {
-    const references = table.getForeignKeyReferences();
-    for (const reference of references) {
+    const inlinedReferences = table.getColumnsWithForeignKeyReferences();
+    for (const reference of inlinedReferences) {
       const constraint: InlinedForeignKeyConstraint
         = reference.constraints.find(constraint => constraint.constraintType === "INLINED FOREIGN KEY") as InlinedForeignKeyConstraint;
       if (constraint) {
@@ -383,6 +395,15 @@ export class SQLRoot extends ToString {
         } else {
           graph.addEdge(table, referencedElement);
         }
+      }
+    }
+    const compositeReferences = table.getForeignKeyConstraints()
+    for (const reference of compositeReferences) {
+      const referencedElement = this.getRootLevelElementForType(reference.referencedModel);
+      if (!(referencedElement && referencedElement instanceof SQLTable)) {
+        throw Error("Did not find the referenced SQLTable to a reference! " + (reference.referencedModel.name ?? ''));
+      } else {
+        graph.addEdge(table, referencedElement);
       }
     }
   }
@@ -407,7 +428,7 @@ export class SQLRoot extends ToString {
     const tables = [];
     for (const node of cycleNodes) {
       // get the references and move them to ALTER-Table constraints
-      const referenceColumns = node.getForeignKeyReferences();
+      const referenceColumns = node.getColumnsWithForeignKeyReferences();
       for (const referenceColumn of referenceColumns) {
         const referencedModel = referenceColumn.getForeignKeyConstraint()?.getReferencedModel();
         referenceColumn.removeForeignKeyConstraints();
