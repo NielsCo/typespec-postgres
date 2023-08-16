@@ -7,5 +7,5 @@ CREATE TABLE Test (
 CREATE TABLE OtherTest (
     testOtherKey NUMERIC,
     testMyId NUMERIC,
-    FOREIGN KEY (testOtherKey, testMyId)
+    FOREIGN KEY (testOtherKey, testMyId) REFERENCES Test
 );

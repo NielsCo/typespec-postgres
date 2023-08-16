@@ -319,7 +319,7 @@ export class CompositeForeignKeyConstraint extends SimpleConstraint {
   }
   toString(_lineType: NewLineType, _saveMode: boolean): string {
     const columnNames: string = this.keyMembers.map(col => col.columnName).join(', ');;
-    return _saveMode ? "ADD " + this.constraintString + " (" + columnNames + ")" : this.constraintString + " (" + columnNames + ")"
+    return _saveMode ? "ADD " + this.constraintString + " (" + columnNames + ")" : this.constraintString + " (" + columnNames + ") REFERENCES " + this.namingConflictResolver.getIdentifierOfRegisteredType(this.referencedModel)
   }
 }
 
@@ -433,11 +433,16 @@ export class SQLRoot extends ToString {
         const referencedModel = referenceColumn.getForeignKeyConstraint()?.getReferencedModel();
         referenceColumn.removeForeignKeyConstraints();
         if (referencedModel) {
-          alterTableStatements.push(new SQLAlterTable(node.getIdentifier(), referenceColumn.columnName, this.namingConflictResolver.getIdentifierOfRegisteredType(referencedModel)));
+          alterTableStatements.push(new SQLAlterTable(node.getIdentifier(), [referenceColumn.columnName], this.namingConflictResolver.getIdentifierOfRegisteredType(referencedModel)));
         } else {
           throw Error("something went wrong in referencing a model");
         }
       }
+      const compositeKeyReferences = node.getForeignKeyConstraints();
+      for (const compositeKeyReference of compositeKeyReferences) {
+        alterTableStatements.push(new SQLAlterTable(node.getIdentifier(), compositeKeyReference.keyMembers.map(member => member.columnName), this.namingConflictResolver.getIdentifierOfRegisteredType(compositeKeyReference.referencedModel)));
+      }
+      node.removeForeignKeyConstraints();
       tables.push(node);
       graph.removeNode(node);
     }
@@ -603,10 +608,11 @@ export class SQLAlterTableAddColumns extends RootLevelSQL<SQLTableColumn, TableC
 }
 
 export class SQLAlterTable extends ToString {
-  constructor(public tableName: string, public propertyName: string, public referencedTableName: string) { super(); }
+  constructor(public tableName: string, public propertyNames: string[], public referencedTableName: string) { super(); }
   toString(lineType: NewLineType, _saveMode: boolean): string {
+    const valueInBrackets = this.propertyNames.length === 1 ? this.propertyNames[0] : this.propertyNames.join(", ");
     return `ALTER TABLE${getNewLine(lineType)}` + indentString(this.tableName, lineType) + getNewLine(lineType) + `ADD${getNewLine(lineType)}` +
-      indentString(`FOREIGN KEY (${this.propertyName}) REFERENCES ${this.referencedTableName};`, lineType);
+      indentString(`FOREIGN KEY (${valueInBrackets}) REFERENCES ${this.referencedTableName};`, lineType);
   }
 }
 
