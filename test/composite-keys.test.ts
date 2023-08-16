@@ -32,7 +32,7 @@ describe("Partial Keys", () => {
         strictEqual(res, expectedSQL);
     });
 
-    it.only("Should allow composite keys of multiple model properties", async () => {
+    it("Should allow composite keys of multiple model properties", async () => {
         const res = await sqlFor(`
             @entity()
             model Test {
@@ -45,7 +45,7 @@ describe("Partial Keys", () => {
                 test: Test;
             }
         `);
-        const filePath = pathPrefix + "simple-composite-key.sql";
+        const filePath = pathPrefix + "automatic-reference-composite-key.sql";
         const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
@@ -81,4 +81,6 @@ describe("Partial Keys", () => {
             },
         ]);
     });
+
+    // TODO: add tests for very weird key-structures
 });

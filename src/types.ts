@@ -4,7 +4,7 @@ import { DirectedGraph } from "./graph.js";
 import { NewLineType } from "./lib.js";
 import { IoCContainer, wrapIdentifierType } from "./naming-resolver.js";
 
-export type ConstraintType = 'PRIMARY KEY' | 'UNIQUE' | 'CHECK' | 'INLINED FOREIGN KEY' | "DEFAULT" | "NOT NULL" | "COMPOSITE KEY";
+export type ConstraintType = 'PRIMARY KEY' | 'UNIQUE' | 'CHECK' | 'INLINED FOREIGN KEY' | "DEFAULT" | "NOT NULL" | "COMPOSITE PRIMARY KEY" | "COMPOSITE FOREIGN KEY";
 
 abstract class ToString {
   protected namingConflictResolver;
@@ -232,7 +232,7 @@ export abstract class SimpleConstraint extends ToString {
   }
 }
 
-export type TableConstraint = CheckConstraint | CompositePrimaryKeyConstraint;
+export type TableConstraint = CheckConstraint | CompositePrimaryKeyConstraint | CompositeForeignKeyConstraint;
 
 export abstract class NamedConstraint extends SimpleConstraint {
   abstract constraintString: string;
@@ -288,8 +288,20 @@ export class UniqueConstraint extends NamedConstraint {
 }
 
 export class CompositePrimaryKeyConstraint extends SimpleConstraint {
-  constraintType: "COMPOSITE KEY" = "COMPOSITE KEY" as const;
+  constraintType: "COMPOSITE PRIMARY KEY" = "COMPOSITE PRIMARY KEY" as const;
   constraintString: string = "PRIMARY KEY";
+  constructor(public keys: SQLTableColumn[]) {
+    super();
+  }
+  toString(_lineType: NewLineType, _saveMode: boolean): string {
+    const columnNames: string = this.keys.map(col => col.columnName).join(', ');;
+    return _saveMode ? "ADD " + this.constraintString + " (" + columnNames + ")" : this.constraintString + " (" + columnNames + ")"
+  }
+}
+
+export class CompositeForeignKeyConstraint extends SimpleConstraint {
+  constraintType: "COMPOSITE FOREIGN KEY" = "COMPOSITE FOREIGN KEY" as const;
+  constraintString: string = "FOREIGN KEY";
   constructor(public keys: SQLTableColumn[]) {
     super();
   }

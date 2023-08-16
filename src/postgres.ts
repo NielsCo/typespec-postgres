@@ -51,7 +51,6 @@ import {
   InlinedForeignKeyConstraint,
   isSQLColumnTypeSimilar,
   NotNullConstraint,
-  PrimaryKeyConstraint,
   SQLDataType,
   SQLColumnType,
   SQLEnum,
@@ -60,7 +59,8 @@ import {
   SQLRoot,
   SQLTable,
   SQLTableColumn,
-  SQLPrimitiveColumnType
+  SQLPrimitiveColumnType,
+  CompositeForeignKeyConstraint
 } from "./types.js";
 import {
   DuplicateEntityCollisionError,
@@ -888,6 +888,11 @@ class SQLEmitter {
       return;
     }
 
+    if (this.isCompositeKey(prop)) {
+      this.handleCompositeKey(prop, table);
+      return;
+    }
+
     if (this.canTypeBeColumn(prop.type)) {
       const dataType: SQLColumnType | undefined = this.getInitialDataTypeOfProperty(prop);
 
@@ -922,11 +927,59 @@ class SQLEmitter {
     }
   }
 
-  addColumnConstraints(prop: ModelProperty, column: SQLTableColumn, table: SQLTable) {
+  isCompositeKey(prop: ModelProperty): boolean {
+    if (prop.type.kind === "Model") {
+      const model = prop.type;
+      const primaryKeysOfReferencedModel = this.getPrimaryKeyPropsOfModel(model);
+      if (primaryKeysOfReferencedModel.length > 1) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  handleCompositeKey(prop: ModelProperty, table: SQLTable) {
+    if (prop.type.kind === "Model") {
+      const model = prop.type;
+      const primaryKeysOfReferencedModel = this.getPrimaryKeyPropsOfModel(model);
+      if (primaryKeysOfReferencedModel.length > 1) {
+        // TODO: actually handle it here...
+        // probably something like for every column do the same thing... so yeah
+        const columns = [];
+        for (const key of primaryKeysOfReferencedModel) {
+          const dataType: SQLColumnType | undefined = this.getInitialDataTypeOfProperty(key);
+          if (dataType) {
+            const propertyName = prop.name + key.name.charAt(0).toUpperCase() + key.name.slice(1);
+            // FIXME: also handle name-collision in general (with other model-properties)
+            if (isReservedKeyword(propertyName)) {
+              reportDiagnostic(this.program, {
+                code: "reserved-column-name",
+                format: { type: key.name },
+                target: key,
+              });
+              return;
+            }         
+            const column = new SQLTableColumn(propertyName, dataType);
+            this.applyDocs(prop, column);
+            this.applyDocs(key, column);
+
+            this.addColumnConstraints(key, column, table, true);
+
+            table.children.push(column);
+            columns.push(column);
+          }
+        }
+        table.constraints.push(new CompositeForeignKeyConstraint(columns));
+      }
+    }
+
+  }
+
+  addColumnConstraints(prop: ModelProperty, column: SQLTableColumn, table: SQLTable, isForeignKey: boolean = false) {
     const notNull = !this.metadataInfo!.isOptional(prop, Visibility.All);
 
-    if (notNull) {
-      if (this.hasKeyDecorator(prop)) {
+    if (notNull && !isForeignKey) {
+      if (this.hasKeyDecorator(prop) && !isForeignKey) {
         table.primaryKey.push(column);
       } else {
         const notNullConstraint: NotNullConstraint = new NotNullConstraint();
