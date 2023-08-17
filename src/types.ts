@@ -627,6 +627,7 @@ export type SQLNonPrimitiveColumnType = {
   typeOriginEntity: Enum | Union, // entity that defines the SQL-Type.
   isArray: boolean,
   constraints: ColumnConstraint[],
+  isCompositeKey: false;
 };
 export type SQLPrimitiveColumnType = {
   isPrimitive: true,
@@ -634,7 +635,20 @@ export type SQLPrimitiveColumnType = {
   dataTypeString: SQLDataType | VarcharType,
   isArray: boolean,
   constraints: ColumnConstraint[],
+  isCompositeKey: false;
 };
+
+export type SQLCompositeKey = {
+  tuples: ModelPropertyColumnTypeTuple[],
+  isCompositeKey: true,
+  referencedModel: Model,
+  compositeKeyModelProperty: ModelProperty,
+}
+
+export type ModelPropertyColumnTypeTuple = {
+  modelProperty: ModelProperty,
+  dataType: SQLColumnType | undefined | SQLCompositeKey,
+}
 
 export function isSQLColumnTypeSimilar(a: SQLColumnType, b: SQLColumnType): boolean {
   if (a.isPrimitive !== b.isPrimitive) {

@@ -60,7 +60,10 @@ import {
   SQLTable,
   SQLTableColumn,
   SQLPrimitiveColumnType,
-  CompositeForeignKeyConstraint
+  CompositeForeignKeyConstraint,
+  SQLCompositeKey,
+  ModelPropertyColumnTypeTuple,
+  CompositePrimaryKeyConstraint
 } from "./types.js";
 import {
   DuplicateEntityCollisionError,
@@ -264,8 +267,8 @@ class SQLEmitter {
      */
 
 
-  handleDataTypeOfModel(model: Model, modelProperty: ModelProperty): SQLColumnType | undefined {
-    let dataType: SQLColumnType | undefined;
+  handleDataTypeOfModel(model: Model, modelProperty: ModelProperty): SQLColumnType | SQLCompositeKey | undefined {
+    let dataType: SQLColumnType | SQLCompositeKey | undefined;
     if (model.name === recordName) { // this means we actually have an object here (not anything else)
       dataType = this.getInnerDataTypeOfRecord();
     }
@@ -284,6 +287,12 @@ class SQLEmitter {
       } else if (primaryKeysOfReferencedModel.length === 1) {
         dataType = this.getDataTypeOfSinglePrimaryKey(primaryKeysOfReferencedModel[0], model)
       } else {
+        return {
+          tuples: primaryKeysOfReferencedModel.map(key => { return { dataType: this.getDataTypeOfSinglePrimaryKey(key, model), modelProperty: key } }),
+          isCompositeKey: true,
+          referencedModel: model,
+          compositeKeyModelProperty: dataType?.isCompositeKey ? dataType.compositeKeyModelProperty : modelProperty
+        }
         // TODO: actually have to add multiple model Properties here!
       }
 
@@ -291,33 +300,40 @@ class SQLEmitter {
     return dataType;
   }
 
-  getDataTypeOfSinglePrimaryKey(modelProperty: ModelProperty, referencedModel: Model): SQLColumnType | undefined {
+  getDataTypeOfSinglePrimaryKey(modelProperty: ModelProperty, referencedModel: Model): SQLColumnType | SQLCompositeKey | undefined {
     const referenceDataType = this.getDataTypeOfModelProperty(modelProperty.type, modelProperty);
     if (referenceDataType) {
-      if (!referenceDataType.isPrimitive) {
-        return {
-          typeOriginEntity: referenceDataType.typeOriginEntity,
-          isArray: referenceDataType.isArray,
-          isPrimitive: false,
-          constraints: [],
-          dataType: "Enum",
-          isForeignKey: true
-        };
+      if (referenceDataType.isCompositeKey) {
+        return referenceDataType;
       } else {
-        return {
-          dataType: referenceDataType.dataType,
-          dataTypeString: referenceDataType?.dataTypeString,
-          isArray: referenceDataType?.isArray,
-          isPrimitive: true,
-          constraints: [new InlinedForeignKeyConstraint(referencedModel)]
-        };
+        if (!referenceDataType.isPrimitive) {
+          return {
+            typeOriginEntity: referenceDataType.typeOriginEntity,
+            isArray: referenceDataType.isArray,
+            isPrimitive: false,
+            constraints: [],
+            dataType: "Enum",
+            isForeignKey: true,
+            isCompositeKey: false
+          };
+        } else {
+          return {
+            dataType: referenceDataType.dataType,
+            dataTypeString: referenceDataType?.dataTypeString,
+            isArray: referenceDataType?.isArray,
+            isPrimitive: true,
+            constraints: [new InlinedForeignKeyConstraint(referencedModel)],
+            isCompositeKey: false
+          };
+        }
       }
     }
+
     return undefined;
   }
 
-  getDataTypeOfModelProperty(type: Type, modelProperty: ModelProperty, columnName?: string): SQLColumnType | undefined {
-    let dataType: SQLColumnType | undefined;
+  getDataTypeOfModelProperty(type: Type, modelProperty: ModelProperty, columnName?: string): SQLColumnType | SQLCompositeKey | undefined {
+    let dataType: SQLColumnType | SQLCompositeKey | undefined;
     if (!this.canTypeBeColumn(type)) {
       reportDiagnostic(this.program, {
         code: "not-a-column-type",
@@ -329,7 +345,7 @@ class SQLEmitter {
 
     else if (type.kind === "Enum") {
       this.addEnum(type);
-      dataType = { isForeignKey: false, typeOriginEntity: type, isArray: false, isPrimitive: false, constraints: [], dataType: "Enum" };
+      dataType = { isForeignKey: false, typeOriginEntity: type, isArray: false, isPrimitive: false, constraints: [], dataType: "Enum", isCompositeKey: false };
     }
 
     else if (type.kind === "Model") {
@@ -346,11 +362,20 @@ class SQLEmitter {
 
     else if (type.kind === "EnumMember") {
       this.addEnum(type.enum);
-      dataType = { isForeignKey: false, typeOriginEntity: type.enum, isArray: false, isPrimitive: false, constraints: [], dataType: "Enum" };
+      dataType = { isForeignKey: false, typeOriginEntity: type.enum, isArray: false, isPrimitive: false, constraints: [], dataType: "Enum", isCompositeKey: false };
     }
 
     if (modelProperty && dataType) {
-      this.applyIntrinsicDecoratorsToModelProperty(modelProperty, dataType, columnName);
+      if (dataType.isCompositeKey) {
+        for (const tuple of dataType.tuples) {
+          if (tuple.dataType && !tuple.dataType.isCompositeKey) {
+            this.applyIntrinsicDecoratorsToModelProperty(tuple.modelProperty, tuple.dataType, columnName); // TODO: why do I need the columnName here?
+          }
+        }
+      } else {
+        this.applyIntrinsicDecoratorsToModelProperty(modelProperty, dataType, columnName);
+      }
+
     }
 
     return dataType;
@@ -567,7 +592,7 @@ class SQLEmitter {
   }
 
   getInnerDataTypeOfRecord(): SQLColumnType {
-    return { constraints: [], dataType: "JSONB", dataTypeString: "JSONB", isArray: false, isPrimitive: true };
+    return { constraints: [], dataType: "JSONB", dataTypeString: "JSONB", isArray: false, isPrimitive: true, isCompositeKey: false };
   }
 
   /**
@@ -579,7 +604,7 @@ class SQLEmitter {
     const indexer = model.indexer;
     if (indexer) {
       const innerType = this.getDataTypeOfModelProperty(indexer.value as unknown as Type, modelProperty);
-      if (innerType) {
+      if (innerType && !innerType.isCompositeKey) {
         innerType.isArray = true;
         if (!innerType.isPrimitive || innerType.constraints.some(constraint => constraint instanceof InlinedForeignKeyConstraint)) {
           reportDiagnostic(this.program, {
@@ -589,8 +614,8 @@ class SQLEmitter {
           });
           return undefined;
         }
+        return innerType;
       }
-      return innerType;
     }
     return undefined;
   }
@@ -877,6 +902,44 @@ class SQLEmitter {
     }
   }
 
+  addCompositeKeyToTable(dataType: SQLCompositeKey, prop: ModelProperty, table: SQLTable, referencedModel: Model) {
+    const columns = [];
+    for (const tuple of dataType.tuples) {
+      let propertyName;
+
+      propertyName = tuple.modelProperty.name.charAt(0).toUpperCase() + tuple.modelProperty.name.slice(1);
+
+      if (dataType.referencedModel !== referencedModel) { // TODO bad names here - obviously
+        propertyName = dataType.compositeKeyModelProperty.name + propertyName.charAt(0).toUpperCase() + propertyName.slice(1);
+      }
+
+      propertyName = prop.name + propertyName.charAt(0).toUpperCase() + propertyName.slice(1);
+      // FIXME: also handle name-collision in general (with other model-properties)
+      if (isReservedKeyword(propertyName)) {
+        reportDiagnostic(this.program, {
+          code: "reserved-column-name",
+          format: { type: propertyName },
+          target: tuple.modelProperty,
+        });
+        return;
+      }
+      const column = new SQLTableColumn(propertyName, tuple.dataType as SQLColumnType);
+      this.applyDocs(prop, column);
+      this.applyDocs(tuple.modelProperty, column);
+
+      this.addColumnConstraints(tuple.modelProperty, column, table, true);
+      column.removeForeignKeyConstraints();
+
+      table.children.push(column);
+      columns.push(column)
+      // columns.push(column); Or do I need the reference here too?
+    }
+    table.constraints.push(new CompositeForeignKeyConstraint(columns, referencedModel));
+    if (this.hasKeyDecorator(prop)) {
+      table.constraints.push(new CompositePrimaryKeyConstraint(columns));
+    }
+  }
+
   addPropertyAsColumn(prop: ModelProperty, table: SQLTable) {
     if (!this.metadataInfo!.isPayloadProperty(prop, Visibility.Read)) {
       // should never happen to our entity models anyway.
@@ -894,23 +957,30 @@ class SQLEmitter {
     }
 
     if (this.canTypeBeColumn(prop.type)) {
-      const dataType: SQLColumnType | undefined = this.getInitialDataTypeOfProperty(prop);
+      const dataType: SQLColumnType | SQLCompositeKey | undefined = this.getInitialDataTypeOfProperty(prop);
 
       if (dataType) {
-        if (isReservedKeyword(prop.name)) {
-          reportDiagnostic(this.program, {
-            code: "reserved-column-name",
-            format: { type: prop.name },
-            target: prop,
-          });
-          return;
+        if (dataType.isCompositeKey) {
+          const referencedModel = prop.type.kind === "Model" ? prop.type : dataType.referencedModel;
+          this.addCompositeKeyToTable(dataType, prop, table, referencedModel);
         }
-        const column = new SQLTableColumn(prop.name, dataType);
-        this.applyDocs(prop, column);
+        else {
+          if (isReservedKeyword(prop.name)) {
+            reportDiagnostic(this.program, {
+              code: "reserved-column-name",
+              format: { type: prop.name },
+              target: prop,
+            });
+            return;
+          }
+          const column = new SQLTableColumn(prop.name, dataType);
+          this.applyDocs(prop, column);
 
-        this.addColumnConstraints(prop, column, table);
+          this.addColumnConstraints(prop, column, table);
 
-        table.children.push(column);
+          table.children.push(column);
+        }
+
       } else {
         reportDiagnostic(this.program, {
           code: "datatype-not-resolvable",
@@ -940,39 +1010,11 @@ class SQLEmitter {
 
   handleCompositeKey(prop: ModelProperty, table: SQLTable) {
     if (prop.type.kind === "Model") {
-      const model = prop.type;
-      const primaryKeysOfReferencedModel = this.getPrimaryKeyPropsOfModel(model);
-      if (primaryKeysOfReferencedModel.length > 1) {
-        // TODO: actually handle it here...
-        // probably something like for every column do the same thing... so yeah
-        const columns = [];
-        for (const key of primaryKeysOfReferencedModel) {
-          const dataType: SQLColumnType | undefined = this.getInitialDataTypeOfProperty(key);
-          if (dataType) {
-            const propertyName = prop.name + key.name.charAt(0).toUpperCase() + key.name.slice(1);
-            // FIXME: also handle name-collision in general (with other model-properties)
-            if (isReservedKeyword(propertyName)) {
-              reportDiagnostic(this.program, {
-                code: "reserved-column-name",
-                format: { type: key.name },
-                target: key,
-              });
-              return;
-            }         
-            const column = new SQLTableColumn(propertyName, dataType);
-            this.applyDocs(prop, column);
-            this.applyDocs(key, column);
-
-            this.addColumnConstraints(key, column, table, true);
-
-            table.children.push(column);
-            columns.push(column);
-          }
-        }
-        table.constraints.push(new CompositeForeignKeyConstraint(columns, model));
+      const dataType: SQLColumnType | SQLCompositeKey | undefined = this.getInitialDataTypeOfProperty(prop);
+      if (dataType?.isCompositeKey) {
+        this.addCompositeKeyToTable(dataType, prop, table, prop.type);
       }
     }
-
   }
 
   addColumnConstraints(prop: ModelProperty, column: SQLTableColumn, table: SQLTable, isForeignKey: boolean = false) {
@@ -1022,10 +1064,10 @@ class SQLEmitter {
   }
 
   getInitialDataTypeOfProperty(prop: ModelProperty) {
-    let dataType: SQLColumnType | undefined;
+    let dataType: SQLColumnType | SQLCompositeKey | undefined;
     if (prop.type.kind === "Union") {
       this.addUnion(prop.type, prop);
-      dataType = { isForeignKey: false, typeOriginEntity: prop.type, isArray: false, isPrimitive: false, constraints: [], dataType: "Enum" };
+      dataType = { isForeignKey: false, typeOriginEntity: prop.type, isArray: false, isPrimitive: false, constraints: [], dataType: "Enum", isCompositeKey: false };
     } else { // for every type except union types with string values
       dataType = this.getDataTypeOfModelProperty(prop.type, prop);
     }
@@ -1040,6 +1082,14 @@ class SQLEmitter {
     if (primaryKeys.length === 1) {
       const primaryKey = primaryKeys[0];
       const primaryKeyDataType = this.getDataTypeOfModelProperty(model, primaryKey);
+      if (primaryKeyDataType?.isCompositeKey) {
+        reportDiagnostic(this.program, {
+          code: "references-has-different-type",
+          format: { type: primaryKey.type.kind },
+          target: modelProperty,
+        });
+        return; // TODO: add a custom error or handle this
+      }
       const similar = primaryKeyDataType ? isSQLColumnTypeSimilar(dataType, primaryKeyDataType) : false;
       if (!similar) {
         reportDiagnostic(this.program, {
@@ -1134,7 +1184,8 @@ class SQLEmitter {
         dataTypeString: innerType,
         isArray: false,
         isPrimitive: true,
-        constraints: []
+        constraints: [],
+        isCompositeKey: false
       };
     }
     return undefined;
@@ -1281,7 +1332,7 @@ class SQLEmitter {
       default:
         return undefined;
     }
-    return { dataType, constraints, dataTypeString: dataType, isArray: false, isPrimitive: true };
+    return { dataType, constraints, dataTypeString: dataType, isArray: false, isPrimitive: true, isCompositeKey: false };
   }
 }
 
