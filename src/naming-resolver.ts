@@ -2,26 +2,31 @@ import { Enum, Model, ModelProperty, Namespace, Union } from "@typespec/compiler
 import { postgresReservedKeywords } from "./reserved.js";
 import { entityDecoratorString } from "./postgres.js";
 
-type IdentifierType =
+type WrappedIdentifierType =
     { kind: "Enum", type: Enum }
     | { kind: "Model", type: Model }
-    | { kind: "Union", type: Union, modelProperty?: ModelProperty };
+    | { kind: "Union", type: Union, modelProperty?: ModelProperty }
 
-type InnerIdentifierType = Enum | Model | Union;
+type IdentifierType =
+    WrappedIdentifierType | ManyToManyIdentifier;
+
+type InnerIdentifierType = Enum | Model | Union | ModelProperty;
+
+export type ManyToManyIdentifier = {
+    type: ModelProperty
+    kind: "ManyToManyIdentifier"
+    originalModel: Model,
+    referencedModel: Model,
+}
 
 export interface RegisterReturn {
     name: string,
     warning: boolean
 }
 
-export function wrapIdentifierType(innerType: InnerIdentifierType, modelProperty?: ModelProperty): IdentifierType {
+export function wrapIdentifierType(innerType: Enum | Model | Union, modelProperty?: ModelProperty): WrappedIdentifierType {
     switch (innerType.kind) {
         case "Enum":
-            return {
-                type: innerType,
-                kind: innerType.kind
-            };
-        case "Model":
             return {
                 type: innerType,
                 kind: innerType.kind
@@ -31,6 +36,11 @@ export function wrapIdentifierType(innerType: InnerIdentifierType, modelProperty
                 type: innerType,
                 kind: innerType.kind,
                 modelProperty: modelProperty
+            };
+        case "Model":
+            return {
+                type: innerType,
+                kind: innerType.kind
             };
     }
 }
@@ -47,7 +57,7 @@ export class NamingConflictResolver {
         this.resolvedNames = new Map<InnerIdentifierType | Namespace, string>();
     }
 
-    public registerModel(type: IdentifierType, name?: string): boolean {
+    public registerType(type: IdentifierType, name?: string): boolean {
         /* c8 ignore next 3 */
         if (this.resolvedNames.has(type.type)) {
             return false;
@@ -65,6 +75,9 @@ export class NamingConflictResolver {
         }
         else if (type.kind === "Union") {
             name = this.getIdentifierOfUnionEnum(type.type, type.modelProperty);
+        }
+        else if (type.kind === "ManyToManyIdentifier") {
+            name = type.originalModel.name + "_" + type.referencedModel.name;
         }
         else if (name === undefined) {
             name = type.type.name;
@@ -183,13 +196,25 @@ export class NamingConflictResolver {
             }
             name = modelName + name;
         } else { /* c8 ignore next 2 */
-            throw new Error ("anonymous union can not be emitted!");
+            throw new Error("anonymous union can not be emitted!");
         }
         return name;
     }
 
     private getSchemaPrefix(type: InnerIdentifierType): string {
-        if (type.namespace?.name) {
+        if (type.kind === "ModelProperty") {
+            if (type.model?.namespace?.name) {
+                const innerReturn = this.getSchemaNameOfNamespace(type.model.namespace);
+                if (innerReturn) {
+                    return innerReturn + '.';
+
+                } /* c8 ignore next 3 */
+                else {
+                    throw new Error("namespace should be registered BEFORE trying to get the schema prefix of it");
+                }
+            }
+        }
+        else if (type.namespace?.name) {
             const innerReturn = this.getSchemaNameOfNamespace(type.namespace);
             if (innerReturn) {
                 return innerReturn + '.';

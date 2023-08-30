@@ -2,7 +2,7 @@ import { Enum, Model, ModelProperty, Namespace, Type, Union } from "@typespec/co
 import { ExternalDocs } from "@typespec/openapi";
 import { DirectedGraph } from "./graph.js";
 import { NewLineType } from "./lib.js";
-import { IoCContainer, wrapIdentifierType } from "./naming-resolver.js";
+import { IoCContainer, ManyToManyIdentifier, wrapIdentifierType } from "./naming-resolver.js";
 
 export type ConstraintType = 'PRIMARY KEY' | 'UNIQUE' | 'CHECK' | 'INLINED FOREIGN KEY' | "DEFAULT" | "NOT NULL" | "COMPOSITE PRIMARY KEY" | "COMPOSITE FOREIGN KEY";
 
@@ -31,6 +31,7 @@ export abstract class Documented extends ToString {
 
 abstract class RootLevelSQL<Child extends ToString, UInnerProperty extends ToString, TType extends Type> extends Documented {
   protected constructor(
+    public identifier: RootLevelIdentifier,
     public type: TType,
     public statement: string,
     public children: Child[] = [],
@@ -97,7 +98,7 @@ export class SQLEnumFromUnion extends RootLevelSQL<SQLEnumMember, SQLEnumMember,
     public constraints: SQLEnumMember[] = [], // Default to an empty array
     public docs?: string,
     public externalDocs?: ExternalDocs | undefined,
-  ) { super(type, "CREATE TYPE", children, constraints, docs, externalDocs, " AS ENUM"); }
+  ) { super(type, type, "CREATE TYPE", children, constraints, docs, externalDocs, " AS ENUM"); }
 
   getIdentifier(): string {
     return this.namingConflictResolver.getIdentifierOfRegisteredType(this.type);
@@ -112,7 +113,7 @@ export class SQLEnum extends RootLevelSQL<SQLEnumMember, SQLEnumMember, Enum> {
     public docs?: string,
     public externalDocs?: ExternalDocs | undefined,
     public modelProperty?: ModelProperty,
-  ) { super(type, "CREATE TYPE", children, constraints, docs, externalDocs, " AS ENUM"); }
+  ) { super(type, type, "CREATE TYPE", children, constraints, docs, externalDocs, " AS ENUM"); }
 
   getIdentifier(): string {
     return this.namingConflictResolver.getIdentifierOfRegisteredType(this.type);
@@ -127,7 +128,7 @@ export class SQLTable extends RootLevelSQL<SQLTableColumn, TableConstraint, Mode
     public primaryKey: SQLTableColumn[] = [],
     public docs?: string,
     public externalDocs?: ExternalDocs | undefined,
-  ) { super(type, "CREATE TABLE", children, constraints, docs, externalDocs, undefined, true); }
+  ) { super(type, type, "CREATE TABLE", children, constraints, docs, externalDocs, undefined, true); }
 
   getIdentifier(): string {
     return this.namingConflictResolver.getIdentifierOfRegisteredType(this.type);
@@ -181,6 +182,27 @@ export class SQLTable extends RootLevelSQL<SQLTableColumn, TableConstraint, Mode
 
   removeForeignKeyConstraints(): void {
     this.constraints = this.constraints.filter(constraint => constraint.constraintType !== "COMPOSITE FOREIGN KEY");
+  }
+}
+
+export type RootLevelIdentifier = Enum | Union | Model | ModelProperty
+
+export class SQLTableFromManyToMany extends SQLTable {
+  constructor(
+    public builder: SQLManyToManyBuilder,
+    public type: Model,
+    public children: SQLTableColumn[] = [],
+    public constraints: TableConstraint[] = [], // Default to an empty array
+    public primaryKey: SQLTableColumn[] = [],
+    public docs?: string,
+    public externalDocs?: ExternalDocs | undefined,
+  ) { 
+    super(type, children, constraints, primaryKey, docs, externalDocs);
+    this.identifier = builder.originalModelProperty;
+  }
+
+  getIdentifier(): string {
+    return this.namingConflictResolver.getIdentifierOfRegisteredType(this.builder.originalModelProperty);
   }
 }
 
@@ -351,7 +373,11 @@ export class InlinedForeignKeyConstraint extends SimpleConstraint {
 }
 
 export class SQLSchema extends ToString {
-  constructor(public type: Namespace) { super(); }
+  public identifier: Namespace;
+  constructor(public type: Namespace) { 
+    super();
+    this.identifier = type;
+   }
   toString(_lineType: NewLineType, saveMode: boolean): string {
     return `CREATE SCHEMA ` + (saveMode ? "IF NOT EXISTS " : "") + this.getIdentifier() + ";";
   }
@@ -361,10 +387,10 @@ export class SQLSchema extends ToString {
   }
 }
 
-type RootLevelElements = SQLTable | SQLEnum | SQLSchema | SQLEnumFromUnion;
+type RootLevelElement = SQLTable | SQLEnum | SQLSchema | SQLEnumFromUnion | SQLTableFromManyToMany;
 
 export class SQLRoot extends ToString {
-  private rootLevelElements: (RootLevelElements)[];
+  private rootLevelElements: (RootLevelElement)[];
 
   constructor() {
     super();
@@ -506,8 +532,8 @@ export class SQLRoot extends ToString {
     return this.rootLevelElements.find(element => element.type === type);
   }
 
-  sqlElementAlreadyExists(elementToCheck: RootLevelElements): boolean {
-    return this.rootLevelElements.some(element => element.type === elementToCheck.type);
+  sqlElementAlreadyExists(elementToCheck: RootLevelElement): boolean {
+    return this.rootLevelElements.some(element => element.identifier === elementToCheck.identifier);
   }
 
   private addNamespace(namespace: Namespace): boolean {
@@ -532,7 +558,34 @@ export class SQLRoot extends ToString {
         namespaceWarning = this.addNamespace(namespace);
       }
       // then register the model
-      const warning = this.namingConflictResolver.registerModel(wrapIdentifierType(elementToAdd.type, elementToAdd.modelProperty));
+      const warning = this.namingConflictResolver.registerType(wrapIdentifierType(elementToAdd.type, elementToAdd.modelProperty));
+      this.rootLevelElements.push(elementToAdd);
+
+      return { registered: true, warning, namespaceWarning };
+    }
+  }
+
+  addManyToManyTable(elementToAdd: SQLTableFromManyToMany) {
+    if (this.sqlElementAlreadyExists(elementToAdd)) {
+      return { registered: false, warning: false, namespaceWarning: false };
+    }
+    else {
+      // first register the namespace
+      let namespaceWarning = false;
+      const namespace = elementToAdd.type.namespace;
+      if (namespace?.name) {
+        namespaceWarning = this.addNamespace(namespace);
+      }
+      // then register the modelProperty
+
+      const manyToManyIdentifier: ManyToManyIdentifier = {
+        kind: "ManyToManyIdentifier",
+        originalModel: elementToAdd.builder.originalModel,
+        referencedModel: elementToAdd.builder.referencedModel,
+        type: elementToAdd.builder.originalModelProperty
+      }
+
+      const warning = this.namingConflictResolver.registerType(manyToManyIdentifier);
       this.rootLevelElements.push(elementToAdd);
 
       return { registered: true, warning, namespaceWarning };
@@ -551,7 +604,7 @@ export class SQLRoot extends ToString {
         namespaceWarning = this.addNamespace(namespace);
       }
       // then register the model
-      const warning = this.namingConflictResolver.registerModel(wrapIdentifierType(elementToAdd.type));
+      const warning = this.namingConflictResolver.registerType(wrapIdentifierType(elementToAdd.type));
       this.rootLevelElements.push(elementToAdd);
 
       return { registered: true, warning, namespaceWarning };
@@ -565,7 +618,7 @@ export class SQLAlterTableAddColumns extends RootLevelSQL<SQLTableColumn, TableC
     public children: SQLTableColumn[] = [],
     public primaryKey: SQLTableColumn[] = []
   ) {
-    super(type, "ALTER TABLE IF EXISTS", children, []);
+    super(type, type, "ALTER TABLE IF EXISTS", children, []);
   }
 
   getIdentifier(): string {
@@ -618,7 +671,17 @@ export class SQLAlterTable extends ToString {
 
 export type VarcharType = `VARCHAR(${`${number}`})`; // This represents the "VARCHAR(any_number)" string
 
-export type SQLColumnType = SQLNonPrimitiveColumnType | SQLPrimitiveColumnType;
+export type SQLColumnType = SQLNonPrimitiveColumnType | SQLPrimitiveColumnType ;
+
+export type SQLManyToManyBuilder = {
+  isPrimitive: false,
+  referencedModel: Model,
+  originalModel: Model,
+  isBuilder: true,
+  dataType: undefined,
+  isCompositeKey: false,
+  originalModelProperty: ModelProperty,
+}
 
 export type SQLNonPrimitiveColumnType = {
   isPrimitive: false,
@@ -627,7 +690,8 @@ export type SQLNonPrimitiveColumnType = {
   typeOriginEntity: Enum | Union, // entity that defines the SQL-Type.
   isArray: boolean,
   constraints: ColumnConstraint[],
-  isCompositeKey: false;
+  isCompositeKey: false,
+  isBuilder: false,
 };
 export type SQLPrimitiveColumnType = {
   isPrimitive: true,
@@ -636,6 +700,7 @@ export type SQLPrimitiveColumnType = {
   isArray: boolean,
   constraints: ColumnConstraint[],
   isCompositeKey: false;
+  isBuilder: false,
 };
 
 export type SQLCompositeKey = {
@@ -643,6 +708,7 @@ export type SQLCompositeKey = {
   isCompositeKey: true,
   referencedModel: Model,
   compositeKeyModelProperty: ModelProperty,
+  isBuilder: false,
 }
 
 export type ModelPropertyColumnTypeTuple = {
@@ -651,6 +717,9 @@ export type ModelPropertyColumnTypeTuple = {
 }
 
 export function isSQLColumnTypeSimilar(a: SQLColumnType, b: SQLColumnType): boolean {
+  if (a.isBuilder || b.isBuilder) {
+    return false; // TODO: check whether sometimes this isn't the case
+  }
   if (a.isPrimitive !== b.isPrimitive) {
     return false;
   } else if (!a.isPrimitive && !b.isPrimitive) {

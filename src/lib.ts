@@ -125,10 +125,34 @@ const libDefinition = {
         default: paramMessage`The datatype of the model property of type '${"type"}' can not be resolved`,
       },
     },
+    "composite-key-error": {
+      severity: "error",
+      messages: {
+        default: paramMessage`There was an error in building the composite key type of '${"type"}'`,
+      },
+    },
     "reference-array": {
       severity: "error",
       messages: {
-        default: paramMessage`Can not create array references in the property '${"type"}' in the current version`,
+        default: paramMessage`Can not manually create array references in the property '${"type"}'`,
+      },
+    },
+    "reference-array-has-multiple-key": {
+      severity: "error",
+      messages: {
+        default: paramMessage`Could not create a column from '${"type"}' as part of an many to many relation, because it has a compound key`,
+      },
+    },
+    "reference-array-could-not-create-column": {
+      severity: "error",
+      messages: {
+        default: paramMessage`Could not create a column from '${"type"}' as part of an many to many relation`,
+      },
+    },
+    "reference-array-has-no-key": {
+      severity: "error",
+      messages: {
+        default: paramMessage`Can not create a references to '${"type"}' as part of an many to many relation, because it does not have a @key`,
       },
     },
     "references-has-no-key": {
