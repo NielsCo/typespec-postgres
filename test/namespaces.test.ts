@@ -295,7 +295,7 @@ describe("Namespaces", () => {
         strictEqual(res, expectedSQL);
     });
 
-    it.only("Should handle n:m relationships in nested namespaces with nameing-collisions", async () => {
+    it("Should handle n:m relationships in nested namespaces with naming-collisions", async () => {
         const code = `
         namespace MyTestName;
             
