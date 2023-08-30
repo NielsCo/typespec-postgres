@@ -294,4 +294,40 @@ describe("Namespaces", () => {
         const expectedSQL = await readAndNormalize(filePath)
         strictEqual(res, expectedSQL);
     });
+
+    it.only("Should handle n:m relationships in nested namespaces with nameing-collisions", async () => {
+        const code = `
+        namespace MyTestName;
+            
+            @entity()
+            model Test {
+                @key id: numeric;
+            }
+
+            namespace OtherNamespace {
+                @entity()
+                model One {
+                    nToM: MyTestName.Test[];
+                    @key id: numeric;
+                }
+
+                @entity()
+                model One_Test {
+                    test: string
+                }
+            }; 
+        `;
+        const diagnostics = await diagnoseSQLFor(code);
+        expectDiagnostics(diagnostics, [
+            {
+                code: "typespec-postgres/duplicate-anonymous-name",
+                message: "The type 'One_Test' has a collision with another entity. The name may be generated from an anonymous model name",
+                severity: "warning"
+            },
+        ]);
+        const res = await sqlFor(code, undefined, undefined, true);
+        const filePath = pathPrefix + "n-to-m-in-nested-namespaces.sql";
+        const expectedSQL = await readAndNormalize(filePath)
+        strictEqual(res, expectedSQL);
+    });
 });
