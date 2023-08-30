@@ -5,7 +5,7 @@ import { readAndNormalize } from "./helper.js";
 const pathPrefix = './test/assets/arrays/';
 
 describe("arrays", () => {
-  it("Check Arrays of automatic references throw errors", async () => {
+  it("Check Arrays of automatic references throws an error if one of them does not have a key", async () => {
     const diagnostics = await diagnoseSQLFor(`
       @entity("myName") model Foo {
         @key() id: numeric,
@@ -17,8 +17,30 @@ describe("arrays", () => {
     `);
     expectDiagnostics(diagnostics, [
       {
-        code: "typespec-postgres/reference-array",
-        message: "Can not create array references in the property 'fooArray' in the current version",
+        code: "typespec-postgres/reference-array-has-no-key",
+        message: "Can not create a references to 'Foo2' as part of an many to many relation, because it does not have a @key",
+      },
+      {
+        code: "typespec-postgres/reference-array-could-not-create-column",
+        message: "Could not create a column from 'fooArray' as part of an many to many relation",
+      },
+    ]);
+  });
+
+  it("Check Arrays of automatic references throws an error if both of them do not have a key", async () => {
+    const diagnostics = await diagnoseSQLFor(`
+      @entity("myName") model Foo {
+        id: numeric,
+      };
+
+      @entity() model Foo2 {
+        fooArray: Foo[]
+      };
+    `);
+    expectDiagnostics(diagnostics, [
+      {
+        code: "typespec-postgres/reference-without-key",
+        message: "Can not reference 'Foo' automatically because it does not have a @key",
       },
       {
         code: "typespec-postgres/datatype-not-resolvable",
@@ -41,7 +63,7 @@ describe("arrays", () => {
     expectDiagnostics(diagnostics, [
       {
         code: "typespec-postgres/reference-array",
-        message: "Can not create array references in the property 'fooArray' in the current version",
+        message: "Can not manually create array references in the property 'fooArray'",
       },
     ]);
   });
@@ -60,7 +82,7 @@ describe("arrays", () => {
     expectDiagnostics(diagnostics, [
       {
         code: "typespec-postgres/reference-array",
-        message: "Can not create array references in the property 'fooArray' in the current version",
+        message: "Can not manually create array references in the property 'fooArray'",
       },
     ]);
   });

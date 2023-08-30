@@ -1,0 +1,29 @@
+CREATE TABLE One (id NUMERIC PRIMARY KEY, test NUMERIC NOT NULL);
+
+CREATE TABLE Test (id NUMERIC PRIMARY KEY, one NUMERIC NOT NULL);
+
+CREATE TABLE One_Test (
+    One_id NUMERIC,
+    Test_id NUMERIC,
+    PRIMARY KEY (One_id, Test_id)
+);
+
+ALTER TABLE
+    One
+ADD
+    FOREIGN KEY (test) REFERENCES Test;
+
+ALTER TABLE
+    Test
+ADD
+    FOREIGN KEY (one) REFERENCES One;
+
+ALTER TABLE
+    One_Test
+ADD
+    FOREIGN KEY (One_id) REFERENCES One;
+
+ALTER TABLE
+    One_Test
+ADD
+    FOREIGN KEY (Test_id) REFERENCES Test;

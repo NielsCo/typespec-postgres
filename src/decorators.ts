@@ -39,6 +39,7 @@ export function $references(context: DecoratorContext, target: ModelProperty, el
     } else if (isModelArray(target.type)) {
       // FIXME: new feature: support references-arrays
       // const targetInnerType = getInnerTypeOfArray(target.type);
+      
       reportDiagnostic(context.program, {
         code: "reference-array",
         format: { type: target.name },

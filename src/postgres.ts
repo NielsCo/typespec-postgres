@@ -51,7 +51,6 @@ import {
   InlinedForeignKeyConstraint,
   isSQLColumnTypeSimilar,
   NotNullConstraint,
-  PrimaryKeyConstraint,
   SQLDataType,
   SQLColumnType,
   SQLEnum,
@@ -60,7 +59,13 @@ import {
   SQLRoot,
   SQLTable,
   SQLTableColumn,
-  SQLPrimitiveColumnType
+  SQLPrimitiveColumnType,
+  CompositeForeignKeyConstraint,
+  SQLCompositeKey,
+  ModelPropertyColumnTypeTuple,
+  CompositePrimaryKeyConstraint,
+  SQLManyToManyBuilder,
+  SQLTableFromManyToMany
 } from "./types.js";
 import {
   DuplicateEntityCollisionError,
@@ -248,36 +253,24 @@ class SQLEmitter {
     return type.decorators.some(decorator => decorator.decorator.name === entityDecoratorString);
   }
 
-  getPrimaryKeyPropOfModel(model: Model): ModelProperty | undefined {
+  getPrimaryKeyPropsOfModel(model: Model): ModelProperty[] {
     // we also have to check all models the referenced model inherits from
+    const propArray: ModelProperty[] = [];
     for (const prop of walkPropertiesInherited(model)) {
       if (this.hasKeyDecorator(prop)) {
-        return prop;
+        propArray.push(prop);
       }
     }
-    return undefined;
+    return propArray;
   }
 
   /**
-   * Returns the data type of the primary key of the model or undefined
-   */
-  dataTypeOfPrimaryKey(model: Model): SQLColumnType | undefined {
-    const table = this.root.getRootLevelElementForType(model);
-    if (table && table instanceof SQLTable) {
-      const primaryKey = this.getPrimaryKeyPropOfModel(model);
-      if (primaryKey) {
-        return this.getDataTypeOfModelProperty(primaryKey.type, primaryKey);
-      } else {
-        return undefined;
-      }
-      // this is good so we can actually reference it
-    } else {
-      throw Error("referencing something that isn't a table yet");
-    }
-  }
+     * Returns the data type of the primary key of the model or undefined
+     */
 
-  handleDataTypeOfModel(model: Model, modelProperty: ModelProperty): SQLColumnType | undefined {
-    let dataType: SQLColumnType | undefined;
+
+  handleDataTypeOfModel(model: Model, modelProperty: ModelProperty): SQLColumnType | SQLManyToManyBuilder | SQLCompositeKey | undefined {
+    let dataType: SQLColumnType | SQLManyToManyBuilder | SQLCompositeKey | undefined;
     if (model.name === recordName) { // this means we actually have an object here (not anything else)
       dataType = this.getInnerDataTypeOfRecord();
     }
@@ -285,40 +278,71 @@ class SQLEmitter {
       dataType = this.getInnerDataTypeOfArray(model, modelProperty);
     } else {
       this.addModel(model);
-      const referenceDataType = this.dataTypeOfPrimaryKey(model);
-      if (!referenceDataType) {
+      const primaryKeysOfReferencedModel = this.getPrimaryKeyPropsOfModel(model);
+      if (primaryKeysOfReferencedModel.length === 0) {
         reportDiagnostic(this.program, {
           code: "reference-without-key",
           format: { type: model.name },
           target: model,
         });
         return undefined;
+      } else if (primaryKeysOfReferencedModel.length === 1) {
+        dataType = this.getDataTypeOfSinglePrimaryKey(primaryKeysOfReferencedModel[0], model)
+      } else {
+        return {
+          tuples: primaryKeysOfReferencedModel.map(key => { return { dataType: this.getDataTypeOfSinglePrimaryKey(key, model), modelProperty: key } }),
+          isCompositeKey: true,
+          referencedModel: model,
+          compositeKeyModelProperty: dataType?.isCompositeKey ? dataType.compositeKeyModelProperty : modelProperty,
+          isBuilder: false,
+        }
+        // TODO: actually have to add multiple model Properties here!
+      }
+
+    }
+    return dataType;
+  }
+
+  getDataTypeOfSinglePrimaryKey(modelProperty: ModelProperty, referencedModel: Model): SQLColumnType | SQLCompositeKey | undefined {
+    const referenceDataType = this.getDataTypeOfModelProperty(modelProperty.type, modelProperty);
+    if (referenceDataType) {
+      if (referenceDataType.isCompositeKey) {
+        return referenceDataType;
       } else {
         if (!referenceDataType.isPrimitive) {
-          dataType = {
+          if (referenceDataType.isBuilder) {
+            // TODO: this should probably throw an error!
+            return undefined;
+          }
+          return {
             typeOriginEntity: referenceDataType.typeOriginEntity,
             isArray: referenceDataType.isArray,
             isPrimitive: false,
             constraints: [],
             dataType: "Enum",
-            isForeignKey: true
+            isForeignKey: true,
+            isCompositeKey: false,
+            isBuilder: false,
           };
         } else {
-          dataType = {
+          return {
             dataType: referenceDataType.dataType,
             dataTypeString: referenceDataType?.dataTypeString,
             isArray: referenceDataType?.isArray,
             isPrimitive: true,
-            constraints: [new InlinedForeignKeyConstraint(model)]
+            constraints: [new InlinedForeignKeyConstraint(referencedModel)],
+            isCompositeKey: false,
+            isBuilder: false,
           };
         }
       }
     }
-    return dataType;
+
+    return undefined;
   }
 
-  getDataTypeOfModelProperty(type: Type, modelProperty: ModelProperty, columnName?: string): SQLColumnType | undefined {
-    let dataType: SQLColumnType | undefined;
+  getDataTypeOfModelProperty(type: Type, modelProperty: ModelProperty, columnName?: string): SQLColumnType | SQLManyToManyBuilder | SQLCompositeKey | undefined {
+    let dataType: SQLColumnType | SQLCompositeKey | SQLManyToManyBuilder | undefined;
     if (!this.canTypeBeColumn(type)) {
       reportDiagnostic(this.program, {
         code: "not-a-column-type",
@@ -330,7 +354,7 @@ class SQLEmitter {
 
     else if (type.kind === "Enum") {
       this.addEnum(type);
-      dataType = { isForeignKey: false, typeOriginEntity: type, isArray: false, isPrimitive: false, constraints: [], dataType: "Enum" };
+      dataType = { isForeignKey: false, typeOriginEntity: type, isArray: false, isPrimitive: false, constraints: [], dataType: "Enum", isCompositeKey: false, isBuilder: false };
     }
 
     else if (type.kind === "Model") {
@@ -347,11 +371,24 @@ class SQLEmitter {
 
     else if (type.kind === "EnumMember") {
       this.addEnum(type.enum);
-      dataType = { isForeignKey: false, typeOriginEntity: type.enum, isArray: false, isPrimitive: false, constraints: [], dataType: "Enum" };
+      dataType = { isForeignKey: false, typeOriginEntity: type.enum, isArray: false, isPrimitive: false, constraints: [], dataType: "Enum", isCompositeKey: false, isBuilder: false };
+    }
+
+    if (dataType?.isBuilder) { // do not try to apply decorators to a builder!
+      return dataType;
     }
 
     if (modelProperty && dataType) {
-      this.applyIntrinsicDecoratorsToModelProperty(modelProperty, dataType, columnName);
+      if (dataType.isCompositeKey) {
+        for (const tuple of dataType.tuples) {
+          if (tuple.dataType && !tuple.dataType.isCompositeKey) {
+            this.applyIntrinsicDecoratorsToModelProperty(tuple.modelProperty, tuple.dataType, columnName); // TODO: why do I need the columnName here?
+          }
+        }
+      } else {
+        this.applyIntrinsicDecoratorsToModelProperty(modelProperty, dataType, columnName);
+      }
+
     }
 
     return dataType;
@@ -568,7 +605,7 @@ class SQLEmitter {
   }
 
   getInnerDataTypeOfRecord(): SQLColumnType {
-    return { constraints: [], dataType: "JSONB", dataTypeString: "JSONB", isArray: false, isPrimitive: true };
+    return { constraints: [], dataType: "JSONB", dataTypeString: "JSONB", isArray: false, isPrimitive: true, isCompositeKey: false, isBuilder: false };
   }
 
   /**
@@ -576,22 +613,46 @@ class SQLEmitter {
    * @param model model type that has the name "Array" and does have an indexer etc.
    * @returns 
    */
-  getInnerDataTypeOfArray(model: Model, modelProperty: ModelProperty): SQLColumnType | undefined {
+  getInnerDataTypeOfArray(model: Model, modelProperty: ModelProperty): SQLColumnType | SQLManyToManyBuilder | undefined {
     const indexer = model.indexer;
     if (indexer) {
       const innerType = this.getDataTypeOfModelProperty(indexer.value as unknown as Type, modelProperty);
-      if (innerType) {
-        innerType.isArray = true;
-        if (!innerType.isPrimitive || innerType.constraints.some(constraint => constraint instanceof InlinedForeignKeyConstraint)) {
+      if (innerType && !innerType.isBuilder) {
+        if (innerType.isCompositeKey) {
+          return {
+            referencedModel: innerType.referencedModel,
+            originalModel: modelProperty.model as Model,
+            isBuilder: true,
+            isPrimitive: false,
+            isCompositeKey: false,
+            dataType: undefined,
+            originalModelProperty: modelProperty
+          }
+        }
+        else if (innerType.constraints.some(constraint => constraint instanceof InlinedForeignKeyConstraint)) {
+          const referencedModel = (innerType.constraints.find(constraint => constraint instanceof InlinedForeignKeyConstraint) as InlinedForeignKeyConstraint).referencedModel;
+          return {
+            referencedModel: referencedModel,
+            originalModel: modelProperty.model as Model,
+            isBuilder: true,
+            isPrimitive: false,
+            isCompositeKey: false,
+            dataType: undefined,
+            originalModelProperty: modelProperty
+          };
+        }
+        else if (!innerType.isPrimitive) {
           reportDiagnostic(this.program, {
             code: "reference-array",
             format: { type: modelProperty.name },
             target: modelProperty,
           });
           return undefined;
+        } else {
+          innerType.isArray = true;
+          return innerType;
         }
       }
-      return innerType;
     }
     return undefined;
   }
@@ -729,7 +790,7 @@ class SQLEmitter {
       }
     }
     catch (error) {
-      this.handleModelRegisterError(error, union);
+      this.handleRegisterError(error, union);
     }
   }
 
@@ -789,7 +850,7 @@ class SQLEmitter {
       }
     }
     catch (error) {
-      this.handleModelRegisterError(error, e);
+      this.handleRegisterError(error, e);
     }
   }
 
@@ -853,7 +914,7 @@ class SQLEmitter {
       }
     }
     catch (error) {
-      this.handleModelRegisterError(error, model);
+      this.handleRegisterError(error, model);
     }
 
     // TODO: Figure out how to handle discriminators
@@ -862,7 +923,6 @@ class SQLEmitter {
     //   const [union] = getDiscriminatedUnion(model, discriminator);
 
     if (gotRegistered) {
-
       this.applyDocs(model, table);
 
       const baseModel = model.baseModel;
@@ -873,12 +933,153 @@ class SQLEmitter {
       }
 
       for (const prop of properties) {
-        this.addPropertyAsColumn(prop, table);
+        const potentialBuilder = this.addPropertyAsColumn(prop, table);
+        if (potentialBuilder?.isBuilder) {
+          this.addTableFromNToMRelationship(potentialBuilder);
+        }
       }
     }
   }
 
-  addPropertyAsColumn(prop: ModelProperty, table: SQLTable) {
+  addTableFromNToMRelationship(builder: SQLManyToManyBuilder) {
+    const table: SQLTableFromManyToMany = new SQLTableFromManyToMany(builder, builder.originalModel);
+
+    // add the primary key of the table we came from
+    // and add the inlineReferencesConstraint
+
+    const firstColumn = this.buildColumnFromPrimaryKeyOfManyToMany(builder.originalModel, builder.referencedModel);
+    if (firstColumn) {
+      table.children.push(firstColumn);
+    } else {
+      reportDiagnostic(this.program, {
+        code: "reference-array-could-not-create-column",
+        format: { type: builder.originalModelProperty.name },
+        target: builder.originalModelProperty,
+      });
+      return;
+      // throw a custom error here
+    }
+    const secondColumn = this.buildColumnFromPrimaryKeyOfManyToMany(builder.referencedModel, builder.originalModel);
+    if (secondColumn) {
+      table.children.push(secondColumn);
+    } else {
+      reportDiagnostic(this.program, {
+        code: "reference-array-could-not-create-column",
+        format: { type: builder.originalModelProperty.name },
+        target: builder.originalModelProperty,
+      });
+      return;
+
+
+    }
+
+    // add them as the Composite Primary Key of the table
+    if (firstColumn && secondColumn) {
+      table.primaryKey.push(...[firstColumn, secondColumn]);
+    }
+
+    try {
+      const ret = this.root.addManyToManyTable(table);
+      if (ret.warning) {
+        reportDiagnostic(this.program, {
+          code: "duplicate-anonymous-name",
+          format: { type: builder.originalModelProperty.name },
+          target: builder.originalModelProperty,
+        });
+      }
+      if (ret.namespaceWarning) {
+        reportDiagnostic(this.program, {
+          code: "namespace-name-collision",
+          format: { type: builder.originalModelProperty?.model?.namespace?.name ?? '' },
+          target: builder.originalModelProperty?.model?.namespace as Namespace,
+        });
+      }
+    } catch (error) {
+      this.handleRegisterError(error, builder.originalModelProperty);
+    }
+  }
+
+  buildColumnFromPrimaryKeyOfManyToMany(originalModel: Model, referencedModel: Model): SQLTableColumn | undefined {
+    const primaryKeys = this.getPrimaryKeyPropsOfModel(originalModel);
+    if (primaryKeys.length === 1) {
+      const primaryKey = primaryKeys[0];
+      const primaryKeyDataType = this.getDataTypeOfModelProperty(originalModel, primaryKey);
+      if (!primaryKeyDataType || primaryKeyDataType?.isCompositeKey || primaryKeyDataType?.isBuilder) {
+        reportDiagnostic(this.program, {
+          code: "reference-array-has-no-key",
+          format: { type: originalModel.name },
+          target: originalModel,
+        });
+        return undefined; // TODO: add a custom error or handle this
+      }
+      const column = new SQLTableColumn(originalModel.name + "_" + primaryKey.name, primaryKeyDataType);
+      return column;
+    }
+    else if (primaryKeys.length === 0) {
+      reportDiagnostic(this.program, {
+        code: "reference-array-has-no-key",
+        format: { type: originalModel.name },
+        target: originalModel,
+      });
+      return undefined;
+    }
+    else {
+      reportDiagnostic(this.program, {
+        code: "reference-array-has-multiple-key",
+        format: { type: originalModel.name },
+        target: originalModel,
+      });
+      return undefined;
+    } 
+  }
+
+  addCompositeKeyToTable(dataType: SQLCompositeKey, prop: ModelProperty, table: SQLTable, referencedModel: Model) {
+    const columns = [];
+    for (const tuple of dataType.tuples) {
+      let propertyName;
+
+      propertyName = tuple.modelProperty.name.charAt(0).toUpperCase() + tuple.modelProperty.name.slice(1);
+
+      if (dataType.referencedModel !== referencedModel) { // TODO bad names here - obviously
+        propertyName = dataType.compositeKeyModelProperty.name + propertyName.charAt(0).toUpperCase() + propertyName.slice(1);
+      }
+
+      propertyName = prop.name + propertyName.charAt(0).toUpperCase() + propertyName.slice(1);
+      // FIXME: also handle name-collision in general (with other model-properties)
+      if (isReservedKeyword(propertyName)) {
+        reportDiagnostic(this.program, {
+          code: "reserved-column-name",
+          format: { type: propertyName },
+          target: tuple.modelProperty,
+        });
+        return;
+      }
+      if (tuple.dataType && !tuple.dataType.isCompositeKey) {
+        const column = new SQLTableColumn(propertyName, tuple.dataType);
+        this.applyDocs(prop, column);
+        this.applyDocs(tuple.modelProperty, column);
+  
+        this.addColumnConstraints(tuple.modelProperty, column, table, true);
+        column.removeForeignKeyConstraints();
+  
+        table.children.push(column);
+        columns.push(column)
+      } else {
+        reportDiagnostic(this.program, {
+          code: "composite-key-error",
+          format: { type: propertyName },
+          target: tuple.modelProperty,
+        });
+        return;
+      }
+    }
+    table.constraints.push(new CompositeForeignKeyConstraint(columns, referencedModel));
+    if (this.hasKeyDecorator(prop)) {
+      table.constraints.push(new CompositePrimaryKeyConstraint(columns));
+    }
+  }
+
+  addPropertyAsColumn(prop: ModelProperty, table: SQLTable): SQLManyToManyBuilder | undefined {
     if (!this.metadataInfo!.isPayloadProperty(prop, Visibility.Read)) {
       // should never happen to our entity models anyway.
       reportDiagnostic(this.program, {
@@ -889,24 +1090,38 @@ class SQLEmitter {
       return;
     }
 
+    if (this.isCompositeKey(prop)) {
+      this.handleCompositeKey(prop, table);
+      return;
+    }
+
     if (this.canTypeBeColumn(prop.type)) {
-      const dataType: SQLColumnType | undefined = this.getInitialDataTypeOfProperty(prop);
+      const dataType: SQLColumnType | SQLCompositeKey | SQLManyToManyBuilder | undefined = this.getInitialDataTypeOfProperty(prop);
 
       if (dataType) {
-        if (isReservedKeyword(prop.name)) {
-          reportDiagnostic(this.program, {
-            code: "reserved-column-name",
-            format: { type: prop.name },
-            target: prop,
-          });
-          return;
+        if (dataType.isCompositeKey) {
+          const referencedModel = prop.type.kind === "Model" ? prop.type : dataType.referencedModel;
+          this.addCompositeKeyToTable(dataType, prop, table, referencedModel);
         }
-        const column = new SQLTableColumn(prop.name, dataType);
-        this.applyDocs(prop, column);
+        else if (dataType.isBuilder) {
+          return dataType;
+          // TODO: dont add it as a column here but use the builder!
+        } else {
+          if (isReservedKeyword(prop.name)) {
+            reportDiagnostic(this.program, {
+              code: "reserved-column-name",
+              format: { type: prop.name },
+              target: prop,
+            });
+            return;
+          }
+          const column = new SQLTableColumn(prop.name, dataType);
+          this.applyDocs(prop, column);
 
-        this.addColumnConstraints(prop, column, table);
+          this.addColumnConstraints(prop, column, table);
 
-        table.children.push(column);
+          table.children.push(column);
+        }
       } else {
         reportDiagnostic(this.program, {
           code: "datatype-not-resolvable",
@@ -921,25 +1136,35 @@ class SQLEmitter {
         target: prop,
       });
     }
+    return undefined;
   }
 
-  addColumnConstraints(prop: ModelProperty, column: SQLTableColumn, table: SQLTable) {
+  isCompositeKey(prop: ModelProperty): boolean {
+    if (prop.type.kind === "Model") {
+      const model = prop.type;
+      const primaryKeysOfReferencedModel = this.getPrimaryKeyPropsOfModel(model);
+      if (primaryKeysOfReferencedModel.length > 1) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  handleCompositeKey(prop: ModelProperty, table: SQLTable) {
+    if (prop.type.kind === "Model") {
+      const dataType: SQLColumnType | SQLCompositeKey | SQLManyToManyBuilder | undefined = this.getInitialDataTypeOfProperty(prop);
+      if (dataType?.isCompositeKey) {
+        this.addCompositeKeyToTable(dataType, prop, table, prop.type);
+      }
+    }
+  }
+
+  addColumnConstraints(prop: ModelProperty, column: SQLTableColumn, table: SQLTable, isForeignKey: boolean = false) {
     const notNull = !this.metadataInfo!.isOptional(prop, Visibility.All);
 
-    if (notNull) {
+    if (notNull && !isForeignKey) {
       if (this.hasKeyDecorator(prop)) {
-        if (table.children.some(column => column.constraints
-          .some(constraint => constraint instanceof PrimaryKeyConstraint))) {
-          // we already have a primaryKeyConstraint so this MUST throw an error
-          reportDiagnostic(this.program, {
-            code: "multiple-key-declarations",
-            format: { type: prop.name },
-            target: prop,
-          });
-        } else {
-          const primaryKeyConstraint: PrimaryKeyConstraint = new PrimaryKeyConstraint();
-          column.constraints.push(primaryKeyConstraint);
-        }
+        table.primaryKey.push(column);
       } else {
         const notNullConstraint: NotNullConstraint = new NotNullConstraint();
         column.constraints.push(notNullConstraint);
@@ -981,10 +1206,10 @@ class SQLEmitter {
   }
 
   getInitialDataTypeOfProperty(prop: ModelProperty) {
-    let dataType: SQLColumnType | undefined;
+    let dataType: SQLColumnType | SQLCompositeKey | SQLManyToManyBuilder | undefined;
     if (prop.type.kind === "Union") {
       this.addUnion(prop.type, prop);
-      dataType = { isForeignKey: false, typeOriginEntity: prop.type, isArray: false, isPrimitive: false, constraints: [], dataType: "Enum" };
+      dataType = { isForeignKey: false, typeOriginEntity: prop.type, isArray: false, isPrimitive: false, constraints: [], dataType: "Enum", isCompositeKey: false, isBuilder: false };
     } else { // for every type except union types with string values
       dataType = this.getDataTypeOfModelProperty(prop.type, prop);
     }
@@ -995,9 +1220,21 @@ class SQLEmitter {
     // the decorator type is not typed well here. But this works
     const model: Model = (referencesDecorator.args[0]?.value as any) as Model;
     this.addModel(model);
-    const primaryKey = this.getPrimaryKeyPropOfModel(model);
-    if (primaryKey) {
+    const primaryKeys = this.getPrimaryKeyPropsOfModel(model);
+    if (primaryKeys.length === 1) {
+      const primaryKey = primaryKeys[0];
       const primaryKeyDataType = this.getDataTypeOfModelProperty(model, primaryKey);
+      if (primaryKeyDataType?.isCompositeKey) {
+        reportDiagnostic(this.program, {
+          code: "references-has-different-type",
+          format: { type: primaryKey.type.kind },
+          target: modelProperty,
+        });
+        return; // TODO: add a custom error or handle this
+      }
+      if (primaryKeyDataType?.isBuilder) {
+        return; // TODO: add a custom error or handle this
+      }
       const similar = primaryKeyDataType ? isSQLColumnTypeSimilar(dataType, primaryKeyDataType) : false;
       if (!similar) {
         reportDiagnostic(this.program, {
@@ -1006,6 +1243,8 @@ class SQLEmitter {
           target: modelProperty,
         });
       }
+    } else if (primaryKeys.length > 1) {
+      // TODO: implement this
     } else {
       reportDiagnostic(this.program, {
         code: "references-has-no-key",
@@ -1021,7 +1260,7 @@ class SQLEmitter {
     return prop.decorators.some(decorator => decorator.decorator.name === "$key");
   }
 
-  handleModelRegisterError(error: unknown, target: Type) {
+  handleRegisterError(error: unknown, target: Type) {
     if (error instanceof DuplicateEntityCollisionError) {
       reportDiagnostic(this.program, {
         code: "duplicate-entity-identifier",
@@ -1090,7 +1329,9 @@ class SQLEmitter {
         dataTypeString: innerType,
         isArray: false,
         isPrimitive: true,
-        constraints: []
+        constraints: [],
+        isCompositeKey: false,
+        isBuilder: false,
       };
     }
     return undefined;
@@ -1237,7 +1478,7 @@ class SQLEmitter {
       default:
         return undefined;
     }
-    return { dataType, constraints, dataTypeString: dataType, isArray: false, isPrimitive: true };
+    return { dataType, constraints, dataTypeString: dataType, isArray: false, isPrimitive: true, isCompositeKey: false, isBuilder: false };
   }
 }
 
