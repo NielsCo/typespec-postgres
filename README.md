@@ -6,7 +6,7 @@ The limitations are set by the decorators and are described in the section [refe
 The library is designed to aid in the initial creation of tables and enums, but the finer points of database design and administration will still require manual intervention.<br>
 While the library is only a proof of concept that was developed as part of a thesis project, it produces valid schema and has a lot of tests to ensure that it does so.<br><br>
 As TypeSpec itself is early in its development it regularly does have breaking changes between versions. This library currently supports the **TypeSpec Version 0.47.1**. <br>
-For the license see [Changelog](changelog.md)
+Also see the [Changelog](changelog.md)
 
 # Getting Started
 You can skip the first 4 steps if you already have a TypeSpec-Project up and running
