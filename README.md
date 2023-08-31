@@ -5,7 +5,8 @@ In order to define actual schema there had to be ***limitations*** *set to the m
 The limitations are set by the decorators and are described in the section [references](#references). <br>
 The library is designed to aid in the initial creation of tables and enums, but the finer points of database design and administration will still require manual intervention.<br>
 While the library is only a proof of concept that was developed as part of a thesis project, it produces valid schema and has a lot of tests to ensure that it does so.<br><br>
-As TypeSpec itself is early in its development it regularly does have breaking changes between versions. This library currently supports the **TypeSpec Version 0.46.0**.
+As TypeSpec itself is early in its development it regularly does have breaking changes between versions. This library currently supports the **TypeSpec Version 0.47.1**. <br>
+For the license see [Changelog](changelog.md)
 
 # Getting Started
 You can skip the first 4 steps if you already have a TypeSpec-Project up and running
@@ -191,6 +192,44 @@ CREATE TABLE Test (
     anotherTest NUMERIC NOT NULL REFERENCES AnotherTest
 );
 ```
+
+### n:m or Arrays of Models
+Arrays of models will be treated as an n:m relationship. This means that they will create a another table that resolves this many-to-many relationship.
+
+Example for a n:m relationship:
+```typespec
+@entity()
+model N {
+  @key id: numeric;
+}
+
+@entity()
+model M {
+    @key id: numeric;
+    users: N[];
+}
+```
+
+This will generate the following PostgreSQL:
+```sql
+CREATE TABLE N (id NUMERIC PRIMARY KEY);
+
+CREATE TABLE M (id NUMERIC PRIMARY KEY);
+
+CREATE TABLE M_N (
+    M_id NUMERIC REFERENCES M,
+    N_id NUMERIC REFERENCES N,
+    PRIMARY KEY (M_id, N_id)
+);
+```
+Please note that the name of the model-property that caused the join (in this case "users") will not be used anywhere in the generated code as the name would not be useful for the join-table.
+
+Also note that the @references-decorator does not support this behavior. Meaning that annotating a line like this will throw an error:
+```typescript
+@references(M) users: numeric[];
+```
+Also note that both sides of the n:m relationship need to have a key.
+
 # Namespaces and Schema
 As you can't nest schemas in PostgreSQL, the library will concat the namespace with filler characters to create a unique schema name. <br>
 The filler characters are currently "_". <br>
@@ -208,24 +247,6 @@ CREATE SCHEMA this_can_be_very_nested_thing;
 CREATE TABLE this_can_be_very_nested_thing.Foo (myId TEXT NOT NULL);
 ```
 Only namespaces **with entities** will be emitted as schemas. <br>
-
-# Limitations
-## n:m relationships
-n:m relationships can not be automatically resolved by the current implementation and will have to be manually resolved.<br>
-n:m relationships are arrays of other models.
-
-Example for unsupported n:m relationship:
-```typespec
-@entity()
-model N {
-  @key id: numeric;
-}
-
-@entity()
-model M {
-    users: N[]
-}
-```
 
 ## visibility will be ignored
 The current code will use the Visibility.Read for all emitted schema.
@@ -245,7 +266,7 @@ Are currently not supported.
 ## Anonymous types
 In order to persist types in postgres they need to be named. The library therefore tries to give all anonymous types a name. <br>
 See the [basic usage example](#basic-usage-example) for an example of how this works. Here the anonymous union type is named "WidgetColorEnum". <br>
-Some union-types can not be resolved. 
+Some union-types can not be resolved.
 
 # emitter-settings
 
