@@ -1,7 +1,11 @@
-import { createTypeSpecLibrary, JSONSchemaType, paramMessage } from "@typespec/compiler";
+import { createTypeSpecLibrary, JSONSchemaType, paramMessage, ProjectionApplication } from "@typespec/compiler";
 
 export type FileType = "sql";
 export type NewLineType = "crlf" | "lf";
+export interface VersionProjections {
+  version: string | undefined;
+  projections: ProjectionApplication[];
+}
 export interface SQLEmitterOptions {
   /**
    * Sets the file type to emit to sql.
@@ -41,6 +45,12 @@ export interface SQLEmitterOptions {
    * Whether to only emit save sql instructions (if exists / if not exists etc.)
    */
   "save-mode"?: boolean
+
+  /**
+   * @default true;
+   * Whether to create database migration scripts from versionsö
+   */
+  "create-migrations-from-version"?: boolean
 }
 
 const EmitterOptionsSchema: JSONSchemaType<SQLEmitterOptions> = {
@@ -52,6 +62,7 @@ const EmitterOptionsSchema: JSONSchemaType<SQLEmitterOptions> = {
     "new-line": { type: "string", enum: ["crlf", "lf"], default: "lf", nullable: true },
     "emit-non-entity-types": { type: "boolean", nullable: true, default: false },
     "save-mode": { type: "boolean", nullable: true, default: false },
+    "create-migrations-from-version": { type: "boolean", nullable: true, default: true },
   },
   required: [],
 };

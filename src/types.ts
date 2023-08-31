@@ -1,8 +1,9 @@
-import { Enum, Model, ModelProperty, Namespace, Type, Union } from "@typespec/compiler";
+import { Enum, Model, ModelProperty, Namespace, Program, Type, Union } from "@typespec/compiler";
 import { ExternalDocs } from "@typespec/openapi";
 import { DirectedGraph } from "./graph.js";
 import { NewLineType } from "./lib.js";
 import { IoCContainer, ManyToManyIdentifier, wrapIdentifierType } from "./naming-resolver.js";
+import { Availability, getAvailabilityMap } from "@typespec/versioning";
 
 export type ConstraintType = 'PRIMARY KEY' | 'UNIQUE' | 'CHECK' | 'INLINED FOREIGN KEY' | "DEFAULT" | "NOT NULL" | "COMPOSITE PRIMARY KEY" | "COMPOSITE FOREIGN KEY";
 
@@ -196,7 +197,7 @@ export class SQLTableFromManyToMany extends SQLTable {
     public primaryKey: SQLTableColumn[] = [],
     public docs?: string,
     public externalDocs?: ExternalDocs | undefined,
-  ) { 
+  ) {
     super(type, children, constraints, primaryKey, docs, externalDocs);
     this.identifier = builder.originalModelProperty;
   }
@@ -374,10 +375,10 @@ export class InlinedForeignKeyConstraint extends SimpleConstraint {
 
 export class SQLSchema extends ToString {
   public identifier: Namespace;
-  constructor(public type: Namespace) { 
+  constructor(public type: Namespace) {
     super();
     this.identifier = type;
-   }
+  }
   toString(_lineType: NewLineType, saveMode: boolean): string {
     return `CREATE SCHEMA ` + (saveMode ? "IF NOT EXISTS " : "") + this.getIdentifier() + ";";
   }
@@ -389,11 +390,12 @@ export class SQLSchema extends ToString {
 
 type RootLevelElement = SQLTable | SQLEnum | SQLSchema | SQLEnumFromUnion | SQLTableFromManyToMany;
 
-export class SQLRoot extends ToString {
+export class SQLRoot {
   private rootLevelElements: (RootLevelElement)[];
+  protected namingConflictResolver;
 
   constructor() {
-    super();
+    this.namingConflictResolver = IoCContainer.getInstance().getNamingConflictResolver();
     this.rootLevelElements = [];
     this.namingConflictResolver.reset();
   }
@@ -434,10 +436,10 @@ export class SQLRoot extends ToString {
     }
   }
 
-  private sortTablesByReferenceHierarchy(tables: SQLTable[]): { tables: SQLTable[], alterTableStatements: SQLAlterTable[] } {
+  private sortTablesByReferenceHierarchy(tables: SQLTable[]): { tables: SQLTable[], alterTableStatements: SQLAlterTableForForeignKey[] } {
     const graph = new DirectedGraph<SQLTable>;
     this.addTablesToGraph(tables, graph);
-    let alterTableStatements: SQLAlterTable[] = [];
+    let alterTableStatements: SQLAlterTableForForeignKey[] = [];
     if (graph.getEdges().length !== 0) { // Only sort if we have references
       const cycleNodes = graph.getNodesInCycles();
       if (cycleNodes.length > 0) {
@@ -449,8 +451,8 @@ export class SQLRoot extends ToString {
     return { tables, alterTableStatements };
   }
 
-  private handleCyclesInGraph(graph: DirectedGraph<SQLTable>, cycleNodes: SQLTable[]): { tables: SQLTable[], alterTableStatements: SQLAlterTable[] } {
-    const alterTableStatements: SQLAlterTable[] = [];
+  private handleCyclesInGraph(graph: DirectedGraph<SQLTable>, cycleNodes: SQLTable[]): { tables: SQLTable[], alterTableStatements: SQLAlterTableForForeignKey[] } {
+    const alterTableStatements: SQLAlterTableForForeignKey[] = [];
     const tables = [];
     for (const node of cycleNodes) {
       // get the references and move them to ALTER-Table constraints
@@ -459,14 +461,14 @@ export class SQLRoot extends ToString {
         const referencedModel = referenceColumn.getForeignKeyConstraint()?.getReferencedModel();
         referenceColumn.removeForeignKeyConstraints();
         if (referencedModel) {
-          alterTableStatements.push(new SQLAlterTable(node.getIdentifier(), [referenceColumn.columnName], this.namingConflictResolver.getIdentifierOfRegisteredType(referencedModel)));
+          alterTableStatements.push(new SQLAlterTableForForeignKey(node.getIdentifier(), [referenceColumn.columnName], this.namingConflictResolver.getIdentifierOfRegisteredType(referencedModel)));
         } else {
           throw Error("something went wrong in referencing a model");
         }
       }
       const compositeKeyReferences = node.getForeignKeyConstraints();
       for (const compositeKeyReference of compositeKeyReferences) {
-        alterTableStatements.push(new SQLAlterTable(node.getIdentifier(), compositeKeyReference.keyMembers.map(member => member.columnName), this.namingConflictResolver.getIdentifierOfRegisteredType(compositeKeyReference.referencedModel)));
+        alterTableStatements.push(new SQLAlterTableForForeignKey(node.getIdentifier(), compositeKeyReference.keyMembers.map(member => member.columnName), this.namingConflictResolver.getIdentifierOfRegisteredType(compositeKeyReference.referencedModel)));
       }
       node.removeForeignKeyConstraints();
       tables.push(node);
@@ -479,10 +481,36 @@ export class SQLRoot extends ToString {
     return { tables, alterTableStatements };
   }
 
-  toString(lineType: NewLineType, saveMode = false): string {
+  toString(lineType: NewLineType, program: Program, version: string | undefined, firstVersion: boolean, saveMode = false): string {
+    if (version) {
+      const newRootLevelElements = [];
+      for (const rootLevelElement of this.rootLevelElements) {
+        const map = getAvailabilityMap(program, rootLevelElement.type)
+        if (map) {
+          switch (map.get(version)) {
+            case Availability.Available:
+              // do nothing is already added
+              break;
+            case Availability.Removed:
+            // drop table;
+            case Availability.Added:
+              // actually add the table.
+              newRootLevelElements.push(rootLevelElement);
+              break;
+            case Availability.Unavailable:
+            // do nothing is already removed;
+          }
+        } else if (firstVersion) {
+          newRootLevelElements.push(rootLevelElement);
+        }
+        // if the table itself is new it needs to be added here!
+      }
+      this.rootLevelElements = newRootLevelElements;
+    }
+
     let tables: SQLTable[] = this.rootLevelElements.filter(element => element instanceof SQLTable) as SQLTable[];
     const otherElements = this.rootLevelElements.filter(element => !(element instanceof SQLTable));
-    let alterTableStatements: SQLAlterTable[] = [];
+    let alterTableStatements: SQLAlterTableForForeignKey[] = [];
     const saveAlterTableStatements: SQLAlterTableAddColumns[] = [];
 
     ({ tables, alterTableStatements } = this.sortTablesByReferenceHierarchy(tables));
@@ -498,7 +526,7 @@ export class SQLRoot extends ToString {
       // remove all columns from tables. Then add them to ALTER-TABLE-Statements
     }
 
-    let sortedElements: (SQLEnum | SQLTable | SQLSchema | SQLAlterTable | SQLEnumFromUnion | SQLAlterTableAddColumns)[] = this.sortRootLevelElements(otherElements);
+    let sortedElements: (SQLEnum | SQLTable | SQLSchema | SQLAlterTableForForeignKey | SQLEnumFromUnion | SQLAlterTableAddColumns)[] = this.sortRootLevelElements(otherElements);
     sortedElements = sortedElements.concat(...tables);
     sortedElements = sortedElements.concat(...saveAlterTableStatements).concat(...alterTableStatements);
     return sortedElements.map(rootLevelElement => rootLevelElement.toString(lineType, saveMode)).join(getNewLine(lineType, 2));
@@ -660,7 +688,7 @@ export class SQLAlterTableAddColumns extends RootLevelSQL<SQLTableColumn, TableC
   }
 }
 
-export class SQLAlterTable extends ToString {
+export class SQLAlterTableForForeignKey extends ToString {
   constructor(public tableName: string, public propertyNames: string[], public referencedTableName: string) { super(); }
   toString(lineType: NewLineType, _saveMode: boolean): string {
     const valueInBrackets = this.propertyNames.length === 1 ? this.propertyNames[0] : this.propertyNames.join(", ");
@@ -671,7 +699,7 @@ export class SQLAlterTable extends ToString {
 
 export type VarcharType = `VARCHAR(${`${number}`})`; // This represents the "VARCHAR(any_number)" string
 
-export type SQLColumnType = SQLNonPrimitiveColumnType | SQLPrimitiveColumnType ;
+export type SQLColumnType = SQLNonPrimitiveColumnType | SQLPrimitiveColumnType;
 
 export type SQLManyToManyBuilder = {
   isPrimitive: false,

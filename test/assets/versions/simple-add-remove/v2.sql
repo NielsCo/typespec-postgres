@@ -1,0 +1,1 @@
+ALTER TABLE MyService.Test

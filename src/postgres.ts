@@ -41,7 +41,7 @@ import {
 import { createMetadataInfo, MetadataInfo, Visibility, } from "@typespec/http";
 import { getExternalDocs, isReadonlyProperty, } from "@typespec/openapi";
 import { buildVersionProjections } from "@typespec/versioning";
-import { FileType, NewLineType, reportDiagnostic, SQLEmitterOptions } from "./lib.js";
+import { FileType, NewLineType, reportDiagnostic, SQLEmitterOptions, VersionProjections } from "./lib.js";
 
 import {
   CheckConstraint,
@@ -84,6 +84,7 @@ const defaultFileType: FileType = "sql";
 const defaultOptions = {
   "new-line": "lf",
   "emit-non-entity-types": false,
+  "create-migrations-from-version": true
 } as const;
 
 export async function $onEmit(context: EmitContext<SQLEmitterOptions>) {
@@ -108,6 +109,7 @@ export function resolveOptions(
     emitNonEntityTypes: resolvedOptions["emit-non-entity-types"] ?? false,
     outputFile: resolvePath(context.emitterOutputDir, outputFile),
     saveMode: resolvedOptions["save-mode"] ?? false,
+    createMigrationsFromVersion: resolvedOptions["create-migrations-from-version"] ?? true,
   };
 }
 
@@ -117,17 +119,19 @@ export interface ResolvedSQLEmitterOptions {
   newLine: NewLine;
   emitNonEntityTypes: boolean;
   saveMode: boolean;
+  createMigrationsFromVersion: boolean;
 }
 
 class SQLEmitter {
   private root: SQLRoot;
+  private currentVersion: string | undefined;
   metadataInfo: MetadataInfo | undefined;
 
   constructor(private program: Program, private options: ResolvedSQLEmitterOptions) {
     this.root = new SQLRoot();
   }
 
-  initializeEmitter(_version?: string) {
+  initializeEmitter() {
     this.root = new SQLRoot();
     this.metadataInfo = createMetadataInfo(this.program, {
       canonicalVisibility: Visibility.Read,
@@ -149,7 +153,10 @@ class SQLEmitter {
       ];
       const originalProgram = this.program;
 
-      const versions = buildVersionProjections(this.program, service.type);
+      const versions: VersionProjections[] = buildVersionProjections(this.program, service.type);
+      const multipleServices: boolean = services.length > 1
+
+      let firstVersion = true;
       for (const record of versions) {
         const projectedProgram = (this.program = projectProgram(originalProgram, [
           ...commonProjections,
@@ -163,9 +170,11 @@ class SQLEmitter {
           projectedServiceNs === projectedProgram.getGlobalNamespaceType()
             ? { type: projectedProgram.getGlobalNamespaceType() }
             : getService(this.program, projectedServiceNs)!,
-          services.length > 1,
-          record.version
+          multipleServices,
+          firstVersion,
+          record.version,
         );
+        firstVersion = false;
       }
     }
   }
@@ -180,16 +189,17 @@ class SQLEmitter {
   async emitSQLFromVersion(
     service: Service,
     multipleService: boolean,
-    version?: string
+    firstVersion: boolean,
+    version?: string,
   ) {
-    this.initializeEmitter(version);
+    this.initializeEmitter();
     try {
       this.buildSchemaAST(service.type);
 
       if (!this.program.compilerOptions.noEmit && !this.program.hasError()) {
         await emitFile(this.program, {
           path: this.resolveOutputFile(service, multipleService, version),
-          content: serializeAST(this.root, this.options.fileType, this.options.newLine, this.options.saveMode),
+          content: this.serializeAST(this.root, this.options.fileType, this.options.newLine, this.options.saveMode, firstVersion, version),
           newLine: this.options.newLine,
         });
       }
@@ -308,33 +318,31 @@ class SQLEmitter {
     if (referenceDataType) {
       if (referenceDataType.isCompositeKey) {
         return referenceDataType;
-      } else {
-        if (!referenceDataType.isPrimitive) {
-          if (referenceDataType.isBuilder) {
-            // TODO: this should probably throw an error!
-            return undefined;
-          }
-          return {
-            typeOriginEntity: referenceDataType.typeOriginEntity,
-            isArray: referenceDataType.isArray,
-            isPrimitive: false,
-            constraints: [],
-            dataType: "Enum",
-            isForeignKey: true,
-            isCompositeKey: false,
-            isBuilder: false,
-          };
-        } else {
-          return {
-            dataType: referenceDataType.dataType,
-            dataTypeString: referenceDataType?.dataTypeString,
-            isArray: referenceDataType?.isArray,
-            isPrimitive: true,
-            constraints: [new InlinedForeignKeyConstraint(referencedModel)],
-            isCompositeKey: false,
-            isBuilder: false,
-          };
+      } else if (!referenceDataType.isPrimitive) {
+        if (referenceDataType.isBuilder) {
+          // TODO: this should probably throw an error!
+          return undefined;
         }
+        return {
+          typeOriginEntity: referenceDataType.typeOriginEntity,
+          isArray: referenceDataType.isArray,
+          isPrimitive: false,
+          constraints: [],
+          dataType: "Enum",
+          isForeignKey: true,
+          isCompositeKey: false,
+          isBuilder: false,
+        };
+      } else {
+        return {
+          dataType: referenceDataType.dataType,
+          dataTypeString: referenceDataType?.dataTypeString,
+          isArray: referenceDataType?.isArray,
+          isPrimitive: true,
+          constraints: [new InlinedForeignKeyConstraint(referencedModel)],
+          isCompositeKey: false,
+          isBuilder: false,
+        };
       }
     }
 
@@ -969,8 +977,6 @@ class SQLEmitter {
         target: builder.originalModelProperty,
       });
       return;
-
-
     }
 
     // add them as the Composite Primary Key of the table
@@ -1030,7 +1036,7 @@ class SQLEmitter {
         target: originalModel,
       });
       return undefined;
-    } 
+    }
   }
 
   addCompositeKeyToTable(dataType: SQLCompositeKey, prop: ModelProperty, table: SQLTable, referencedModel: Model) {
@@ -1480,21 +1486,20 @@ class SQLEmitter {
     }
     return { dataType, constraints, dataTypeString: dataType, isArray: false, isPrimitive: true, isCompositeKey: false, isBuilder: false };
   }
+
+  serializeAST(root: SQLRoot, fileType: FileType, newLineType: NewLineType, saveMode: boolean, firstVersion: boolean, version: string | undefined): string {
+    if (fileType === "sql") {
+      const actualVersion = this.options.createMigrationsFromVersion ? version : undefined;
+      return root.toString(newLineType, this.program, actualVersion, firstVersion, saveMode);
+    } else {
+      return '';
+    }
+  }
 }
-
-
 
 class ErrorTypeFoundError extends Error {
   constructor() {
     super("Error type found in evaluated TypeSpec output");
-  }
-}
-
-function serializeAST(root: SQLRoot, fileType: FileType, newLineType: NewLineType, saveMode: boolean): string {
-  if (fileType === "sql") {
-    return root.toString(newLineType, saveMode);
-  } else {
-    return '';
   }
 }
 

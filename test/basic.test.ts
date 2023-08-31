@@ -28,58 +28,6 @@ describe("basic tests", () => {
     strictEqual(res, expectedSQL);
   });
 
-  it("Check that basic versioning works", async () => {
-    const { v1, v2, v3 } = await sqlFor(
-      `
-      @versioned(Versions)
-      @service({title: "My Service"})
-      namespace MyService {
-        enum Versions {
-          @useDependency(MyLibrary.Versions.A)
-          "v1",
-          @useDependency(MyLibrary.Versions.B)
-          "v2",
-          @useDependency(MyLibrary.Versions.C)
-          "v3"}
-        @entity()
-        model Test {
-          prop1: string;
-          @added(Versions.v2) prop2: string;
-          @removed(Versions.v2) prop3: string;
-          @renamedFrom(Versions.v3, "prop4") prop4new: string;
-          @madeOptional(Versions.v3) prop5?: string;
-        }
-
-        @route("/read1")
-        op read1(): Test;
-        op read2(): MyLibrary.Foo;
-      }
-
-      @versioned(Versions)
-      namespace MyLibrary {
-        enum Versions {A, B, C}
-
-        model Foo {
-          prop1: string;
-          @added(Versions.B) prop2: string;
-          @added(Versions.C) prop3: string;
-        }
-      }
-    `,
-      ["v1", "v2", "v3"]
-    );
-    const filePathV1 = pathPrefix + "v1.sql";
-    const expectedSQLv1 = await readAndNormalize(filePathV1);
-    const filePathV2 = pathPrefix + "v2.sql";
-    const expectedSQLv2 = await readAndNormalize(filePathV2);
-    const filePathV3 = pathPrefix + "v3.sql";
-    const expectedSQLv3 = await readAndNormalize(filePathV3);
-
-    strictEqual(v1, expectedSQLv1);
-    strictEqual(v2, expectedSQLv2);
-    strictEqual(v3, expectedSQLv3);
-  });
-
   it("Check Simple Enum Test", async () => {
     const res = await sqlFor(`
       @entity("myName") model Foo {
