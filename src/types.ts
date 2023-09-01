@@ -481,7 +481,7 @@ export class SQLRoot {
     return { tables, alterTableStatements };
   }
 
-  toString(lineType: NewLineType, program: Program, version: string | undefined, firstVersion: boolean, saveMode = false): string {
+  filterForVersion(program: Program, version: string | undefined, firstVersion: boolean) {
     if (version) {
       const newRootLevelElements = [];
       for (const rootLevelElement of this.rootLevelElements) {
@@ -500,14 +500,22 @@ export class SQLRoot {
             case Availability.Unavailable:
             // do nothing is already removed;
           }
-        } else if (firstVersion) {
+        } else if (firstVersion) { // no Version data available - this means this just exists in the first version
           newRootLevelElements.push(rootLevelElement);
         }
         // if the table itself is new it needs to be added here!
       }
+      // TODO: also filter the elements of them if they are already "Available" probably
+
+      // things to check:
+      // if the parent doesn't have version-information, can the child have any? 
+      //  - if not we can just use all "Available" elements for alter table etc.
       this.rootLevelElements = newRootLevelElements;
     }
+  }
 
+  toString(lineType: NewLineType, program: Program, version: string | undefined, firstVersion: boolean, saveMode = false): string {
+    this.filterForVersion(program, version, firstVersion);
     let tables: SQLTable[] = this.rootLevelElements.filter(element => element instanceof SQLTable) as SQLTable[];
     const otherElements = this.rootLevelElements.filter(element => !(element instanceof SQLTable));
     let alterTableStatements: SQLAlterTableForForeignKey[] = [];

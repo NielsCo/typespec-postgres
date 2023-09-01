@@ -132,4 +132,6 @@ describe("versions tests", () => {
   useDependency, 
   versioned
   */
+
+  // The code has to make sure that naming-conflicts don't happen even if something is created in a later version.
 });
